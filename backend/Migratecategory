@@ -1,0 +1,130 @@
+// ============================================================
+// MigrateCategory.gs
+// Run migrateCategory() ONCE to populate Category column
+// for existing equipment rows that were seeded without it.
+// Safe to run multiple times — skips rows that already have a category.
+// ============================================================
+
+function migrateCategory() {
+  var ss = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('Equipment');
+  var data = sheet.getDataRange().getValues();
+
+  // Detect column positions from header row
+  var headers = data[0];
+  var equipIDCol = headers.indexOf('EquipID');       // 0
+  var cycleCol   = headers.indexOf('InspectionCycle'); // 5
+  var catCol     = headers.indexOf('Category');       // 6
+  var statusCol  = headers.indexOf('Status');         // 7
+
+  if (catCol < 0) {
+    Logger.log('Category column not found. Running addCategoryColumn() first...');
+    addCategoryColumn();
+    // Re-read headers after inserting column
+    data = sheet.getDataRange().getValues();
+    headers = data[0];
+    catCol = headers.indexOf('Category');
+    equipIDCol = headers.indexOf('EquipID');
+    if (catCol < 0) {
+      Logger.log('ERROR: Still cannot find Category column after addCategoryColumn(). Aborting.');
+      return;
+    }
+    Logger.log('Category column added at column ' + (catCol + 1) + '. Continuing migration...');
+  }
+
+  // Category map for all 172 equipment
+  var categoryMap = {
+    'EQ001': 'HV Switchgear', 'EQ002': 'HV Switchgear', 'EQ003': 'HV Switchgear',
+    'EQ004': 'HV Switchgear', 'EQ005': 'HV Switchgear', 'EQ006': 'HV Switchgear',
+    'EQ007': 'HV Switchgear', 'EQ008': 'HV Switchgear', 'EQ009': 'HV Switchgear',
+    'EQ010': 'HV Switchgear', 'EQ011': 'HV Switchgear', 'EQ012': 'HV Switchgear',
+    'EQ013': 'HV Switchgear',
+    'EQ014': 'Transformer',   'EQ015': 'Transformer',   'EQ016': 'Transformer',
+    'EQ017': 'Transformer',   'EQ018': 'Transformer',
+    'EQ019': 'LV Switchgear', 'EQ020': 'LV Switchgear', 'EQ021': 'LV Switchgear',
+    'EQ022': 'LV Switchgear', 'EQ023': 'LV Switchgear', 'EQ024': 'LV Switchgear',
+    'EQ025': 'LV Switchgear', 'EQ026': 'LV Switchgear', 'EQ027': 'LV Switchgear',
+    'EQ028': 'Hygrometer',    'EQ029': 'Hygrometer',    'EQ030': 'Hygrometer',
+    'EQ031': 'Hygrometer',    'EQ032': 'Hygrometer',
+    'EQ033': 'Solar PV',      'EQ034': 'Solar PV',      'EQ035': 'Solar PV',
+    'EQ036': 'Solar PV',
+    'EQ037': 'FCU Panel',     'EQ038': 'FCU Panel',     'EQ039': 'FCU Panel',
+    'EQ040': 'FCU Panel',
+    'EQ041': 'AHU',           'EQ042': 'AHU',           'EQ043': 'AHU',
+    'EQ044': 'AHU',           'EQ045': 'AHU',
+    'EQ046': 'AHU Panel',     'EQ047': 'AHU Panel',     'EQ048': 'AHU Panel',
+    'EQ049': 'AHU Panel',     'EQ050': 'AHU Panel',
+    'EQ051': 'CDA System',    'EQ052': 'CDA System',
+    'EQ053': 'Chiller',       'EQ054': 'Chiller',
+    'EQ055': 'Cooling Tower', 'EQ056': 'Cooling Tower',
+    'EQ057': 'Pump',          'EQ058': 'Pump',          'EQ059': 'Pump',
+    'EQ060': 'Chiller',
+    'EQ061': 'LV Switchgear', 'EQ062': 'LV Switchgear', 'EQ063': 'LV Switchgear',
+    'EQ064': 'LV Switchgear', 'EQ065': 'LV Switchgear', 'EQ066': 'LV Switchgear',
+    'EQ067': 'LV Switchgear', 'EQ068': 'LV Switchgear', 'EQ069': 'LV Switchgear',
+    'EQ070': 'LV Switchgear', 'EQ071': 'LV Switchgear', 'EQ072': 'LV Switchgear',
+    'EQ073': 'LV Switchgear', 'EQ074': 'LV Switchgear', 'EQ075': 'LV Switchgear',
+    'EQ076': 'LV Switchgear', 'EQ077': 'LV Switchgear', 'EQ078': 'LV Switchgear',
+    'EQ079': 'LV Switchgear', 'EQ080': 'LV Switchgear', 'EQ081': 'LV Switchgear',
+    'EQ082': 'LV Switchgear', 'EQ083': 'LV Switchgear', 'EQ084': 'LV Switchgear',
+    'EQ085': 'LV Switchgear', 'EQ086': 'LV Switchgear', 'EQ087': 'LV Switchgear',
+    'EQ088': 'LV Switchgear', 'EQ089': 'LV Switchgear',
+    // Plant 2
+    'EQ090': 'HV Switchgear', 'EQ091': 'HV Switchgear', 'EQ092': 'HV Switchgear',
+    'EQ093': 'HV Switchgear', 'EQ094': 'HV Switchgear', 'EQ095': 'HV Switchgear',
+    'EQ096': 'HV Switchgear', 'EQ097': 'HV Switchgear', 'EQ098': 'HV Switchgear',
+    'EQ099': 'Transformer',   'EQ100': 'Transformer',   'EQ101': 'Transformer',
+    'EQ102': 'Transformer',   'EQ103': 'Transformer',   'EQ104': 'Transformer',
+    'EQ105': 'Transformer',
+    'EQ106': 'LV Switchgear', 'EQ107': 'LV Switchgear', 'EQ108': 'LV Switchgear',
+    'EQ109': 'LV Switchgear', 'EQ110': 'LV Switchgear', 'EQ111': 'LV Switchgear',
+    'EQ112': 'Hygrometer',    'EQ113': 'Hygrometer',    'EQ114': 'Hygrometer',
+    'EQ115': 'Hygrometer',    'EQ116': 'Hygrometer',    'EQ117': 'Hygrometer',
+    'EQ118': 'Hygrometer',    'EQ119': 'Hygrometer',    'EQ120': 'Hygrometer',
+    'EQ121': 'Hygrometer',    'EQ122': 'Hygrometer',    'EQ123': 'Hygrometer',
+    'EQ124': 'Hygrometer',
+    'EQ125': 'Solar PV',      'EQ126': 'Solar PV',
+    'EQ127': 'Chiller',       'EQ128': 'Chiller',       'EQ129': 'Chiller',
+    'EQ130': 'Cooling Tower', 'EQ131': 'Cooling Tower', 'EQ132': 'Cooling Tower',
+    'EQ133': 'Cooling Tower', 'EQ134': 'Cooling Tower', 'EQ135': 'Cooling Tower',
+    'EQ136': 'Pump',          'EQ137': 'Pump',          'EQ138': 'Pump',
+    'EQ139': 'Chiller',       'EQ140': 'Chiller',
+    'EQ141': 'Pump',          'EQ142': 'Pump',          'EQ143': 'Pump',
+    'EQ144': 'Pump',          'EQ145': 'Pump',          'EQ146': 'Pump',
+    'EQ147': 'LV Switchgear', 'EQ148': 'LV Switchgear', 'EQ149': 'LV Switchgear',
+    'EQ150': 'LV Switchgear', 'EQ151': 'LV Switchgear', 'EQ152': 'LV Switchgear',
+    'EQ153': 'LV Switchgear', 'EQ154': 'LV Switchgear', 'EQ155': 'LV Switchgear',
+    'EQ156': 'LV Switchgear', 'EQ157': 'LV Switchgear', 'EQ158': 'LV Switchgear',
+    'EQ159': 'LV Switchgear', 'EQ160': 'LV Switchgear', 'EQ161': 'LV Switchgear',
+    'EQ162': 'LV Switchgear', 'EQ163': 'LV Switchgear', 'EQ164': 'LV Switchgear',
+    'EQ165': 'LV Switchgear', 'EQ166': 'LV Switchgear', 'EQ167': 'LV Switchgear',
+    'EQ168': 'LV Switchgear', 'EQ169': 'LV Switchgear', 'EQ170': 'LV Switchgear',
+    'EQ171': 'LV Switchgear', 'EQ172': 'LV Switchgear'
+  };
+
+  var updated = 0;
+  var skipped = 0;
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    if (!row[equipIDCol]) continue; // skip empty rows
+
+    var equipID = row[equipIDCol];
+    var existingCat = row[catCol];
+
+    // Skip if already has a category
+    if (existingCat && String(existingCat).trim() !== '') {
+      skipped++;
+      continue;
+    }
+
+    var category = categoryMap[equipID] || 'General';
+    sheet.getRange(i + 1, catCol + 1).setValue(category);
+    updated++;
+  }
+
+  SpreadsheetApp.flush();
+  Logger.log('migrateCategory() done.');
+  Logger.log('Updated: ' + updated + ' rows');
+  Logger.log('Skipped (already had category): ' + skipped + ' rows');
+}
