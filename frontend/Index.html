@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Factory Maintenance Platform</title>
+  <?!= include('Style'); ?>
+</head>
+<body>
+
+<!-- ══ LOADING OVERLAY ══════════════════════════════════════ -->
+<div id="loading-overlay" style="display:none">
+  <div class="loading-logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+    Factory Maintenance Platform
+  </div>
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Loading...</div>
+</div>
+
+<!-- ══ TOP NAVIGATION ═══════════════════════════════════════ -->
+<nav id="top-nav" style="display:none">
+  <button class="nav-hamburger" onclick="toggleSidebar()" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <a class="nav-logo" href="#">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+    Factory Maintenance Platform
+  </a>
+  <div class="nav-actions">
+
+    <div style="position:relative">
+      <button class="nav-user" onclick="toggleDropdown()">
+        <div class="nav-avatar" id="nav-avatar-text">T</div>
+        <span class="nav-user-name" id="nav-user-name">User</span>
+        <span class="nav-user-caret">▾</span>
+      </button>
+      <div class="user-dropdown" id="user-dropdown">
+        <div class="dropdown-item" onclick="loadPlantsScreen(); closeDropdown()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          Home
+        </div>
+        <div class="dropdown-item" onclick="closeDropdown(); gasCall('getWebAppUrl').then(function(u){ window.open(u+'?page=dashboard','_blank'); });">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          Dashboard
+        </div>
+        <div class="dropdown-item" onclick="closeDropdown(); gasCall('getWebAppUrl').then(function(u){ window.open(u+'?page=report','_blank'); });">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          Reports
+        </div>
+        <div class="dropdown-item" onclick="window.open('?page=admin','_blank'); closeDropdown()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+          Admin Panel
+        </div>
+        <div class="dropdown-divider"></div>
+        <div class="dropdown-item danger" onclick="logout()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+          Logout
+        </div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ══ SIDEBAR ═══════════════════════════════════════════════ -->
+<div id="sidebar-overlay" onclick="closeSidebar()"></div>
+<div id="sidebar">
+  <div class="sidebar-header">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+    <span class="logo-text">FMP v4.0</span>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="sidebar-section-label">Main</div>
+    <div class="sidebar-nav-item active" onclick="loadPlantsScreen(); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+      Plants Overview
+    </div>
+    <div class="sidebar-section-label">Reports</div>
+    <div class="sidebar-nav-item" onclick="closeSidebar(); loadDashboardScreen();">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+      Dashboard
+    </div>
+    <div class="sidebar-nav-item" onclick="gasCall('getWebAppUrl').then(function(u){ window.open(u+'?page=report','_blank'); }); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+      Inspection Report
+    </div>
+    <div class="sidebar-section-label">Fire Extinguisher</div>
+    <div class="sidebar-nav-item" onclick="loadFEDashboard(); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z"></path><path d="M12 14v8"></path><path d="M8 22h8"></path></svg>
+      FE Dashboard
+    </div>
+    <div class="sidebar-nav-item" onclick="loadFEMap(); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
+      Floor Map
+    </div>
+    <div class="sidebar-nav-item" onclick="loadFEReport(); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+      FE Reports
+    </div>
+    <div class="sidebar-section-label">System</div>
+    <div class="sidebar-nav-item" onclick="loadFESettings(); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M4.93 4.93a10 10 0 0 0 0 14.14"></path></svg>
+      FE Settings
+    </div>
+    <div class="sidebar-section-label">System</div>
+    <div class="sidebar-nav-item" onclick="gasCall('getWebAppUrl').then(function(u){ window.open(u+'?page=admin','_blank'); }); closeSidebar()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path><path d="M4.93 4.93a10 10 0 0 0 0 14.14"></path></svg>
+      Admin Panel
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    <div style="font-size:11px;color:var(--gray-400)">Factory Maintenance Platform v4.0</div>
+  </div>
+</div>
+
+<!-- ══ TOAST CONTAINER ══════════════════════════════════════ -->
+<div id="toast-container"></div>
+
+<!-- ══ APP WRAPPER ══════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: LOGIN                                          -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="login-screen" style="display:none">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="login-logo-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+        </div>
+        <div class="login-title">Factory Maintenance Platform</div>
+        <div class="login-subtitle">Sign in to continue</div>
+      </div>
+
+      <!-- Step 1: Select Technician -->
+      <div class="login-step" id="step-select">
+        <div class="login-section-label">Select Your Name</div>
+        <div class="tech-list" id="tech-list">
+          <div style="padding:20px;text-align:center;color:var(--gray-400)">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Step 2: Enter PIN -->
+      <div class="login-step" id="step-pin">
+        <div style="text-align:center;margin-bottom:16px">
+          <div style="font-size:15px;font-weight:700;color:var(--gray-800)">Welcome, <span id="pin-tech-name">–</span></div>
+          <div style="font-size:13px;color:var(--gray-500);margin-top:4px">Enter your 4-digit PIN</div>
+        </div>
+        <div class="pin-display">
+          <div class="pin-dot"></div><div class="pin-dot"></div>
+          <div class="pin-dot"></div><div class="pin-dot"></div>
+        </div>
+        <div class="pin-pad">
+          <button class="pin-btn" onclick="pinPress('1')">1</button>
+          <button class="pin-btn" onclick="pinPress('2')">2</button>
+          <button class="pin-btn" onclick="pinPress('3')">3</button>
+          <button class="pin-btn" onclick="pinPress('4')">4</button>
+          <button class="pin-btn" onclick="pinPress('5')">5</button>
+          <button class="pin-btn" onclick="pinPress('6')">6</button>
+          <button class="pin-btn" onclick="pinPress('7')">7</button>
+          <button class="pin-btn" onclick="pinPress('8')">8</button>
+          <button class="pin-btn" onclick="pinPress('9')">9</button>
+          <button class="pin-btn del" onclick="pinPress('DEL')">⌫</button>
+          <button class="pin-btn" onclick="pinPress('0')">0</button>
+          <button class="pin-btn" onclick="showStep('step-select')" style="font-size:12px">Back</button>
+        </div>
+        <div class="login-error" id="login-error">Incorrect PIN. Please try again.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN 1: SELECT PLANT                                 -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-plants" class="page" style="display:none">
+
+    <!-- Greeting bar -->
+    <div class="greeting-bar">
+      <div class="greeting-left">
+        <div class="greeting-text" id="greeting-text">Good morning</div>
+        <div class="greeting-name" id="greeting-name">–</div>
+        <div class="greeting-date" id="greeting-date">–</div>
+      </div>
+      <div class="greeting-right">
+        <div class="greeting-badge">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span id="greeting-time">–</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-body">
+
+      <!-- KPI Strip -->
+      <div class="kpi-strip">
+        <div class="kpi-item">
+          <div class="kpi-icon" style="background:#eff6ff;color:#1a56db">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+          </div>
+          <div class="kpi-info">
+            <div class="kpi-val" id="dash-total-plants">–</div>
+            <div class="kpi-lbl">Plants</div>
+          </div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-item">
+          <div class="kpi-icon" style="background:#f0fdf4;color:#16a34a">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+          </div>
+          <div class="kpi-info">
+            <div class="kpi-val" id="dash-total-areas">–</div>
+            <div class="kpi-lbl">Areas</div>
+          </div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-item">
+          <div class="kpi-icon" style="background:#fff7ed;color:#ea580c">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+          </div>
+          <div class="kpi-info">
+            <div class="kpi-val" id="dash-total-equip">–</div>
+            <div class="kpi-lbl">Equipment</div>
+          </div>
+        </div>
+        <div class="kpi-divider"></div>
+        <div class="kpi-item">
+          <div class="kpi-icon" style="background:#fef2f2;color:#dc2626">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div class="kpi-info">
+            <div class="kpi-val" id="dash-pending" style="color:#dc2626">–</div>
+            <div class="kpi-lbl">Pending</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section label -->
+      <div class="plants-section-label">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+        Select Plant
+      </div>
+
+      <!-- Plant Cards -->
+      <div class="plant-grid" id="plant-cards">
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-400)">Loading plants...</div>
+      </div>
+    </div>
+    <footer class="app-footer">© 2026 Factory Maintenance Platform. All rights reserved.</footer>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN 2: INSPECTION AREAS                             -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-areas" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadPlantsScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back
+      </button>
+    </div>
+    <div class="page-header">
+      <h1>Inspection Areas</h1>
+      <p>Select an area to start inspection or view reports — <strong id="areas-plant-name"></strong></p>
+    </div>
+    <div class="page-body">
+      <!-- Summary Stats -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Total Areas</div>
+            <div class="stat-value" id="areas-total-areas">–</div>
+            <div class="stat-sub blue" id="breadcrumb-plant">In Plant</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Total Equipment</div>
+            <div class="stat-value" id="areas-total-equip">–</div>
+            <div class="stat-sub green">Across All Areas</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Completed Today</div>
+            <div class="stat-value" id="areas-completed">–</div>
+            <div class="stat-sub orange" style="color:var(--orange-600)">Inspected</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div class="stat-info">
+            <div class="stat-label">Pending Today</div>
+            <div class="stat-value" id="areas-pending">–</div>
+            <div class="stat-sub purple">Needs Attention</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="area-grid" id="area-cards">
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-400)">Loading areas...</div>
+      </div>
+      <div class="pagination">
+        <div class="pagination-info" id="area-page-info"></div>
+        <div class="pagination-btns" id="area-page-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN 3: EQUIPMENT / ASSETS                           -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-equipment" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadAreasScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back
+      </button>
+      <span class="breadcrumb-link" id="equip-breadcrumb-plant" onclick="loadPlantsScreen()"></span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current" id="equip-breadcrumb-area"></span>
+    </div>
+
+    <div class="screen-title-row">
+      <div>
+        <div class="screen-title">Equipment / Assets</div>
+        <div style="font-size:13px;color:var(--gray-500);margin-top:2px">Select an equipment to start inspection</div>
+      </div>
+      <div class="date-selector">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        <span id="equip-date-display">Today</span>
+        <span>▾</span>
+      </div>
+    </div>
+
+    <div class="page-body" style="padding-top:12px">
+      <!-- Summary Stats -->
+      <div class="stat-grid" style="grid-template-columns:repeat(5,1fr)">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+          </div>
+          <div class="stat-info"><div class="stat-label">Total Equipment</div><div class="stat-value" id="es-total">–</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+          </div>
+          <div class="stat-info"><div class="stat-label">Completed Today</div><div class="stat-value" id="es-completed">–</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          </div>
+          <div class="stat-info"><div class="stat-label">Pending</div><div class="stat-value" id="es-pending">–</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:var(--red-100)">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="var(--red-600)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          </div>
+          <div class="stat-info"><div class="stat-label">Overdue</div><div class="stat-value" id="es-overdue">–</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+          </div>
+          <div class="stat-info"><div class="stat-label">Next Due Tomorrow</div><div class="stat-value" id="es-tomorrow">–</div></div>
+        </div>
+      </div>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar">
+        <div class="filter-search">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="equip-search" placeholder="Search equipment or asset tag..." oninput="filterEquip()">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:var(--gray-500);font-weight:600">Status</label>
+          <select class="filter-select" id="equip-status-filter" onchange="filterEquip()">
+            <option value="">All Status</option>
+            <option value="Completed Today">Completed Today</option>
+            <option value="Pending">Pending</option>
+            <option value="Overdue">Overdue</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label style="font-size:11px;color:var(--gray-500);font-weight:600">Cycle</label>
+          <select class="filter-select" id="equip-cycle-filter" onchange="filterEquip()">
+            <option value="">All Cycles</option>
+            <option>Daily</option><option>Weekly</option><option>Bi-Weekly</option>
+            <option>Semi-Monthly</option><option>Monthly</option>
+            <option>Quarterly</option><option>Semi-Annual</option><option>Annual</option>
+          </select>
+        </div>
+        <div class="view-toggle">
+          <button class="view-btn active" id="view-btn-grid" onclick="setViewMode('grid')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+            Grid View
+          </button>
+          <button class="view-btn" id="view-btn-list" onclick="setViewMode('list')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+            List View
+          </button>
+        </div>
+      </div>
+
+      <!-- Equipment Cards -->
+      <div class="equip-grid" id="equip-cards">
+        <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--gray-400)">Loading equipment...</div>
+      </div>
+      <div class="pagination">
+        <div class="pagination-info" id="equip-page-info"></div>
+        <div class="pagination-btns" id="equip-page-btns"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN 4: INSPECTION FORM                              -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-form" class="page" style="display:none;padding-bottom:80px">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadEquipmentScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back
+      </button>
+      <span class="breadcrumb-link" id="form-breadcrumb-plant" onclick="loadPlantsScreen()"></span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-link" id="form-breadcrumb-area" onclick="loadAreasScreen()"></span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current" id="form-breadcrumb-equip"></span>
+    </div>
+
+    <div class="page-body">
+      <!-- Equipment Header Card -->
+      <div class="equip-form-header">
+        <div class="equip-form-title">
+          <div class="status-dot orange" id="form-status-dot"></div>
+          <div class="equip-form-name" id="form-equip-name">–</div>
+        </div>
+        <div class="equip-form-meta">
+          <span id="form-asset-tag">–</span>
+          <span>|</span>
+          <span id="form-location">–</span>
+        </div>
+        <div class="form-header-fields">
+          <div class="form-field">
+            <label>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              Inspection Date
+            </label>
+            <input type="date" id="form-insp-date">
+          </div>
+          <div class="form-field">
+            <label>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;margin-right:4px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              Technician Name
+            </label>
+            <select id="form-tech-select" class="form-select" style="min-width:200px"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Form Layout -->
+      <div class="form-layout">
+        <!-- LEFT: Parameters -->
+        <div>
+          <div id="param-container">
+            <div style="text-align:center;padding:40px;color:var(--gray-400)">Loading parameters...</div>
+          </div>
+        </div>
+
+        <!-- RIGHT: Sidebar -->
+        <div class="form-sidebar">
+          <!-- Status Legend -->
+          <div class="sidebar-card">
+            <div class="sidebar-card-title">Status Legend</div>
+            <div class="legend-item">
+              <div class="legend-label normal"><div class="legend-dot green"></div>Normal</div>
+              <div class="legend-desc">Within Range</div>
+            </div>
+            <div class="legend-item">
+              <div class="legend-label outofrange"><div class="legend-dot red"></div>Out of Range</div>
+              <div class="legend-desc">Outside Limit</div>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="sidebar-card">
+            <div class="sidebar-card-title">Inspection Notes</div>
+            <textarea class="notes-textarea" id="inspection-notes" maxlength="500" placeholder="Enter any observations or additional notes..." oninput="updateCharCount()"></textarea>
+            <div class="char-count" id="char-count">0 / 500</div>
+          </div>
+
+          <!-- Attachments -->
+          <div class="sidebar-card">
+            <div class="sidebar-card-title">Attachments</div>
+            <div class="attach-zone" onclick="document.getElementById('attach-file').click()">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 16 12 12 8 16"></polyline><line x1="12" y1="12" x2="12" y2="21"></line><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"></path></svg>
+              <p>Drag & drop files here<br>or <a>click to browse</a></p>
+              <div class="attach-hint">JPG, PNG, PDF up to 10MB</div>
+            </div>
+            <input type="file" id="attach-file" style="display:none" accept=".jpg,.jpeg,.png,.pdf" multiple>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Action Bar -->
+    <div class="action-bar">
+      <div class="action-bar-info">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        Please verify all readings before saving the inspection.
+      </div>
+      <button class="btn btn-ghost" onclick="saveInspection('Draft')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        Save as Draft
+      </button>
+      <button class="btn btn-ghost" onclick="clearAllParams()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 .49-3.51"></path></svg>
+        Clear All
+      </button>
+      <button class="btn btn-primary btn-lg" onclick="saveInspection('Completed')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+        Save Inspection
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </button>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN 5: CHECKLIST                                    -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-checklist" class="page" style="display:none;padding-bottom:80px">
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadPlantsScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back
+      </button>
+      <span class="breadcrumb-current" id="cl-plant-name"></span>
+    </div>
+
+    <!-- Header -->
+    <div class="cl-header">
+      <div>
+        <div class="cl-title">&#128203; My Checklist</div>
+        <div class="cl-subtitle">All equipment for inspection &mdash; <span id="cl-date"></span></div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="loadAreasScreen()" style="gap:6px">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+        By Area View
+      </button>
+    </div>
+
+    <!-- Stats -->
+    <div class="cl-stats">
+      <div class="cl-stat">
+        <div class="label">Total</div>
+        <div class="value" id="cl-stat-total">–</div>
+        <div class="sub" style="color:var(--blue-primary)">Equipment</div>
+      </div>
+      <div class="cl-stat completed">
+        <div class="label">Completed</div>
+        <div class="value" id="cl-stat-completed">–</div>
+        <div class="sub" style="color:var(--green-600)">Today</div>
+      </div>
+      <div class="cl-stat pending">
+        <div class="label">Pending</div>
+        <div class="value" id="cl-stat-pending">–</div>
+        <div class="sub" style="color:var(--orange-600)">To Do</div>
+      </div>
+      <div class="cl-stat overdue">
+        <div class="label">Overdue</div>
+        <div class="value" id="cl-stat-overdue">–</div>
+        <div class="sub" style="color:var(--red-600)">Missed</div>
+      </div>
+    </div>
+
+    <!-- Cycle Slicer -->
+    <div class="cl-slicer" id="cl-slicer"></div>
+
+    <!-- Filter Tabs -->
+    <div class="cl-tabs">
+      <button class="cl-tab active" id="cl-tab-cycle" onclick="setClGroupBy('cycle')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        By Cycle
+      </button>
+      <button class="cl-tab" id="cl-tab-area" onclick="setClGroupBy('area')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        By Area
+      </button>
+      <button class="cl-tab" id="cl-tab-category" onclick="setClGroupBy('category')">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        By Category
+      </button>
+      <button class="cl-tab" id="cl-tab-search" onclick="document.getElementById('cl-search-input').focus()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        Search
+      </button>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="cl-search-wrap">
+      <div class="cl-search">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="cl-search-input" placeholder="Search equipment, area, category, asset tag..." oninput="clSearch()">
+        <button class="cl-search-clear" onclick="clClearSearch()" title="Clear">&#10005;</button>
+      </div>
+    </div>
+
+    <!-- Checklist Body -->
+    <div class="cl-body" id="cl-body">
+      <div class="cl-empty">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+        <h3>Loading checklist...</h3>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: DASHBOARD                                       -->
+  <!-- ══════════════════════════════════════════════════════ -->
+  <div id="screen-dashboard" class="page" style="display:none">
+
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadPlantsScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Back
+      </button>
+      <span class="breadcrumb-current">Inspection Dashboard</span>
+    </div>
+
+    <div class="db-page">
+
+      <!-- Header -->
+      <div class="db-header">
+        <div class="db-title" id="db-title">Factory Inspection Record</div>
+        <div class="db-header-right">
+          <div class="db-year-group" id="db-year-btns"></div>
+          <button class="db-export-btn" id="db-export-btn" onclick="dbExportCSV()" style="display:none">
+            &#8595; Export Excel
+          </button>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="db-legend">
+        <span style="font-size:13px;color:var(--gray-500)">&#9432;</span>
+        <span class="db-leg"><span class="db-leg-icon ok">&#10003;</span> = completed</span>
+        <span class="db-leg"><span class="db-leg-icon bad">&#10007;</span> = not completed</span>
+        <span class="db-leg"><span class="db-leg-icon up">&#8212;</span> = upcoming / not executed</span>
+        <span style="color:var(--gray-400);font-size:12px">Click any cell for details.</span>
+      </div>
+
+      <!-- Table container -->
+      <div id="db-content">
+        <div class="db-spinner-wrap">
+          <div class="loading-spinner"></div>
+          <p style="margin-top:12px;color:var(--gray-500)">Loading dashboard...</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Detail Modal -->
+    <div class="modal-overlay" id="db-modal" style="display:none">
+      <div style="background:white;border-radius:14px;width:100%;max-width:560px;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+        <div style="background:#1f2937;color:white;padding:18px 22px;border-radius:14px 14px 0 0;display:flex;align-items:flex-start;justify-content:space-between">
+          <div>
+            <div style="font-size:17px;font-weight:700;margin-bottom:4px" id="db-m-title"></div>
+            <div style="font-size:13px;color:rgba(255,255,255,.75)" id="db-m-sub"></div>
+            <div style="display:inline-flex;align-items:center;background:rgba(255,255,255,.18);border-radius:20px;padding:4px 12px;font-size:13px;font-weight:600;margin-top:6px" id="db-m-pill"></div>
+          </div>
+          <button onclick="closeDbModal()" style="background:none;border:none;color:white;font-size:22px;cursor:pointer;opacity:.7;line-height:1;padding:0">&#10005;</button>
+        </div>
+        <div style="padding:20px 22px">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px" id="db-m-stats"></div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px" id="db-m-grid"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: FE DASHBOARD                                    -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="screen-fe-dashboard" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadPlantsScreen()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        Home
+      </button>
+      <span class="breadcrumb-current">Fire Extinguisher</span>
+    </div>
+    <div class="page-body">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div style="font-size:20px;font-weight:800;color:var(--gray-800)">&#129519; FE Dashboard</div>
+          <div style="font-size:13px;color:var(--gray-500)" id="fe-month-label">This month's inspection status</div>
+        </div>
+        <button class="btn btn-primary" onclick="loadFEMap()">Floor Map &#8594;</button>
+      </div>
+
+      <!-- KPI -->
+      <div class="fe-kpi-grid">
+        <div class="fe-kpi-card fe-total">
+          <div class="fe-kpi-val" id="fe-kpi-total">–</div>
+          <div class="fe-kpi-label">Total FE</div>
+        </div>
+        <div class="fe-kpi-card fe-completed">
+          <div class="fe-kpi-val" id="fe-kpi-completed">–</div>
+          <div class="fe-kpi-label">Completed</div>
+        </div>
+        <div class="fe-kpi-card fe-pending">
+          <div class="fe-kpi-val" id="fe-kpi-pending">–</div>
+          <div class="fe-kpi-label">Pending</div>
+        </div>
+        <div class="fe-kpi-card fe-failed" id="fe-kpi-completion-card">
+          <div class="fe-kpi-val" id="fe-kpi-pct">0%</div>
+          <div class="fe-kpi-label" id="fe-kpi-pct-label">Completion</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="fe-chip-row">
+        <button class="fe-chip active" id="fe-chip-all"       onclick="feSetFilter('all')">All</button>
+        <button class="fe-chip"        id="fe-chip-pending"   onclick="feSetFilter('pending')">Pending</button>
+        <button class="fe-chip"        id="fe-chip-completed" onclick="feSetFilter('completed')">Completed</button>
+      </div>
+
+      <!-- Table -->
+      <div class="fe-table-wrap">
+        <table class="fe-table">
+          <thead><tr><th>FE ID</th><th>Building</th><th>Floor</th><th>Location</th><th>Type</th><th>Status</th></tr></thead>
+          <tbody id="fe-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: FE MAP                                          -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="screen-fe-map" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="showScreen('fe-dashboard'); loadFEDashboard()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        FE Dashboard
+      </button>
+      <span class="breadcrumb-current">Floor Map</span>
+    </div>
+    <div class="page-body">
+      <div class="fe-map-controls">
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:6px">Building</div>
+          <div style="display:flex;gap:6px">
+            <button class="fe-building-chip active" id="fe-b-P1" onclick="feSetBuilding('P1')">P1</button>
+            <button class="fe-building-chip"        id="fe-b-P2" onclick="feSetBuilding('P2')">P2</button>
+          </div>
+        </div>
+        <div>
+          <div style="font-size:11px;font-weight:700;color:var(--gray-500);text-transform:uppercase;margin-bottom:6px">Floor</div>
+          <div class="fe-chip-row" id="fe-floors" style="margin-bottom:0"></div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:flex-end">
+          <span style="font-size:11px;color:var(--gray-500)">
+            <span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:50%;margin-right:4px"></span>Inspected
+            <span style="display:inline-block;width:10px;height:10px;background:#dc2626;border-radius:50%;margin-left:8px;margin-right:4px"></span>Pending
+          </span>
+        </div>
+      </div>
+
+      <div class="fe-map-card">
+        <div class="fe-map-wrapper">
+          <img id="fe-map-img" src="" class="fe-map-img">
+          <div id="fe-map-layer" class="fe-map-layer"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="fe-map-toolbar" id="fe-toolbar">
+      <button class="fe-toolbar-btn" id="fe-move-btn" onclick="feToggleMove()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="5 9 2 12 5 15"></polyline><polyline points="9 5 12 2 15 5"></polyline><polyline points="15 19 12 22 9 19"></polyline><polyline points="19 9 22 12 19 15"></polyline><line x1="2" y1="12" x2="22" y2="12"></line><line x1="12" y1="2" x2="12" y2="22"></line></svg>
+        Move Mode
+      </button>
+      <button class="fe-toolbar-btn save" id="fe-save-btn" onclick="feSaveAllPositions()" style="display:none">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        Save Positions
+      </button>
+      <div class="fe-toolbar-sep"></div>
+      <button class="fe-toolbar-btn add" onclick="feOpenAddModal()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+        Add FE
+      </button>
+      <div class="fe-map-legend">
+        <span><span class="fe-legend-dot" style="background:#16a34a"></span>Inspected</span>
+        <span><span class="fe-legend-dot" style="background:#dc2626"></span>Pending</span>
+      </div>
+    </div>
+
+    <!-- Bottom sheet -->
+    <div id="fe-sheet" class="fe-sheet"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: FE REPORT                                       -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="screen-fe-report" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="showScreen('fe-dashboard'); loadFEDashboard()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        FE Dashboard
+      </button>
+      <span class="breadcrumb-current">FE Reports</span>
+    </div>
+    <div class="page-body">
+      <div style="font-size:20px;font-weight:800;color:var(--gray-800);margin-bottom:16px">&#128202; FE Reports</div>
+
+      <!-- KPI strip -->
+      <div class="fe-kpi-grid" style="margin-bottom:20px">
+        <div class="fe-kpi-card fe-total"><div class="fe-kpi-val" id="fer-total">–</div><div class="fe-kpi-label">Total FE</div></div>
+        <div class="fe-kpi-card fe-completed"><div class="fe-kpi-val" id="fer-completed">–</div><div class="fe-kpi-label">Completed</div></div>
+        <div class="fe-kpi-card fe-pending"><div class="fe-kpi-val" id="fer-pending">–</div><div class="fe-kpi-label">Pending</div></div>
+        <div class="fe-kpi-card fe-failed" id="fer-pct-card"><div class="fe-kpi-val" id="fer-pct">0%</div><div class="fe-kpi-label" id="fer-pct-label">Completion</div></div>
+      </div>
+
+      <!-- Progress bar -->
+      <div style="background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200);padding:16px;margin-bottom:16px;box-shadow:var(--shadow-sm)">
+        <div style="font-size:13px;font-weight:700;color:var(--gray-700);margin-bottom:8px">Overall Inspection Progress</div>
+        <div class="fe-progress-bar-wrap">
+          <div class="fe-progress-fill" id="fer-progress-fill" style="width:0%">0%</div>
+        </div>
+        <div style="font-size:13px;color:var(--gray-500);margin-top:8px" id="fer-progress-text">Loading...</div>
+      </div>
+
+      <!-- Building summary -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+        <div class="fe-table-wrap">
+          <div style="padding:12px 14px;font-size:13px;font-weight:700;color:var(--gray-700);border-bottom:1px solid var(--gray-200)">By Building</div>
+          <table class="fe-table"><thead><tr><th>Building</th><th>Total</th><th>Done</th><th>Pending</th><th>%</th></tr></thead>
+          <tbody id="fer-building-body"></tbody></table>
+        </div>
+        <div class="fe-table-wrap">
+          <div style="padding:12px 14px;font-size:13px;font-weight:700;color:var(--gray-700);border-bottom:1px solid var(--gray-200)">By Type</div>
+          <table class="fe-table"><thead><tr><th>Type</th><th>Total</th></tr></thead>
+          <tbody id="fer-type-body"></tbody></table>
+        </div>
+      </div>
+
+      <!-- Monthly table -->
+      <div class="fe-table-wrap" style="margin-bottom:16px">
+        <div style="padding:12px 14px;font-size:13px;font-weight:700;color:var(--gray-700);border-bottom:1px solid var(--gray-200)">Monthly Inspection Summary</div>
+        <table class="fe-table"><thead><tr><th>Building</th><th>Floor</th><th>Total</th><th>Completed</th><th>Pending</th><th>%</th></tr></thead>
+        <tbody id="fer-monthly-body"></tbody>
+      </table></div>
+
+      <!-- Period selector -->
+      <div class="fe-period-selector">
+        <span style="font-size:13px;font-weight:600;color:var(--gray-600)">Period:</span>
+        <select class="fe-period-sel" id="fer-month-sel" onchange="feLoadHistoricalReport()"></select>
+        <select class="fe-period-sel" id="fer-year-sel"  onchange="feLoadHistoricalReport()"></select>
+        <span style="font-size:12px;color:var(--gray-400)" id="fer-period-info"></span>
+      </div>
+
+      <!-- Export buttons -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="feExportXLSX()">&#8595; Export Excel</button>
+        <button class="btn btn-outline" onclick="feExportCSV()">&#8595; Export CSV</button>
+        <button class="btn btn-outline" onclick="feGeneratePDF()">&#128438; PDF Report</button>
+        <button class="btn btn-outline" onclick="feGenerateQRLinks()">&#128279; Generate QR Links</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: FE INSPECTION FORM (full screen overlay)        -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="screen-fe-inspect">
+    <div class="fe-inspect-header">
+      <button class="fe-inspect-back" onclick="closeFEInspect()">&#8592;</button>
+      <div>
+        <div style="font-size:16px;font-weight:700" id="fe-inspect-title">Inspection</div>
+        <div style="font-size:12px;opacity:.8" id="fe-inspect-sub"></div>
+      </div>
+    </div>
+    <div style="padding:16px" id="fe-inspect-content"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <!-- SCREEN: FE SETTINGS                                     -->
+  <!-- ═══════════════════════════════════════════════════════ -->
+  <div id="screen-fe-settings" class="page" style="display:none">
+    <div class="breadcrumb">
+      <button class="breadcrumb-back" onclick="loadFEDashboard()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+        FE Dashboard
+      </button>
+      <span class="breadcrumb-current">FE Settings</span>
+    </div>
+    <div class="page-body">
+      <div style="font-size:20px;font-weight:800;color:var(--gray-800);margin-bottom:16px">&#9881; FE Settings</div>
+
+      <!-- Map URLs -->
+      <div class="fe-settings-section">
+        <div class="fe-settings-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"></polygon><line x1="9" y1="3" x2="9" y2="18"></line><line x1="15" y1="6" x2="15" y2="21"></line></svg>
+          Floor Map Image URLs
+        </div>
+        <div class="fe-settings-body" id="fe-map-url-settings">
+          <div style="color:var(--gray-400);font-size:13px">Loading...</div>
+        </div>
+      </div>
+
+      <!-- FE Types -->
+      <div class="fe-settings-section">
+        <div class="fe-settings-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z"></path><path d="M12 14v8"></path><path d="M8 22h8"></path></svg>
+          FE Types
+        </div>
+        <div class="fe-settings-body">
+          <div id="fe-type-list" style="margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px">
+            <input type="text" class="form-input" id="fe-new-type-input" placeholder="New type e.g. Water" style="flex:1">
+            <button class="btn btn-primary" onclick="feAddType()">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- QR Links -->
+      <div class="fe-settings-section">
+        <div class="fe-settings-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          QR Code Inspection Links
+        </div>
+        <div class="fe-settings-body">
+          <p style="font-size:13px;color:var(--gray-600);margin-bottom:12px">Generate direct inspection links for each FE. Save to Google Sheet then print QR codes.</p>
+          <button class="btn btn-primary" onclick="feGenerateQRLinks()">&#128279; Generate Inspection Links</button>
+          <div id="fe-qr-result" style="margin-top:10px;font-size:13px;color:var(--gray-500)"></div>
+        </div>
+      </div>
+
+      <!-- QR Label Generator -->
+      <div class="fe-settings-section">
+        <div class="fe-settings-header">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          QR Label Generator
+        </div>
+        <div class="fe-settings-body">
+
+          <!-- Filters -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Building</label>
+              <select class="form-input" id="qrl-building" onchange="qrlFilterFE()">
+                <option value="">All Buildings</option>
+                <option value="P1">P1</option>
+                <option value="P2">P2</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Floor</label>
+              <select class="form-input" id="qrl-floor" onchange="qrlFilterFE()">
+                <option value="">All Floors</option>
+                <option value="Ground">Ground</option>
+                <option value="1st Floor">1st Floor</option>
+                <option value="Mezzanine">Mezzanine</option>
+                <option value="2nd Floor">2nd Floor</option>
+                <option value="Roof">Roof</option>
+              </select>
+            </div>
+            <div class="form-group" style="margin:0">
+              <label class="form-label">Label Size</label>
+              <select class="form-input" id="qrl-size">
+                <option value="sm">Small (5×3 cm)</option>
+                <option value="md" selected>Medium (7×4 cm)</option>
+                <option value="lg">Large (9×5 cm)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Per-row and select all -->
+          <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">
+            <div class="form-group" style="margin:0;display:flex;align-items:center;gap:8px">
+              <label class="form-label" style="margin:0">Labels per row:</label>
+              <select class="form-input" id="qrl-cols" style="width:70px;padding:6px 8px">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;font-weight:600;cursor:pointer">
+              <input type="checkbox" id="qrl-select-all" onchange="qrlSelectAll(this.checked)" style="accent-color:var(--blue-primary);width:15px;height:15px">
+              Select All
+            </label>
+            <span id="qrl-count" style="font-size:13px;color:var(--gray-500)">0 selected</span>
+            <button class="btn btn-primary" style="margin-left:auto" onclick="feGenerateQRLabels()">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+              Print Labels
+            </button>
+          </div>
+
+          <!-- FE checklist -->
+          <div id="qrl-fe-list" style="max-height:280px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);padding:4px 0;background:white">
+            <div style="text-align:center;padding:20px;color:var(--gray-400);font-size:13px">Loading FE list...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FE Add Modal -->
+  <div id="fe-add-modal" class="modal-overlay" style="display:none">
+    <div style="background:white;border-radius:16px;padding:24px;width:90%;max-width:400px;box-shadow:var(--shadow-lg)">
+      <div style="font-size:17px;font-weight:700;margin-bottom:16px">Add Fire Extinguisher</div>
+      <div class="form-group"><label class="form-label">FE ID</label><input type="text" class="form-input" id="fe-new-id" placeholder="e.g. CO2-GF-001"></div>
+      <div class="form-group"><label class="form-label">Building</label>
+        <select class="form-input" id="fe-new-building"><option value="P1">P1</option><option value="P2">P2</option></select></div>
+      <div class="form-group"><label class="form-label">Floor</label>
+        <select class="form-input" id="fe-new-floor">
+          <option value="Ground">Ground</option><option value="1st Floor">1st Floor</option>
+          <option value="Mezzanine">Mezzanine</option><option value="2nd Floor">2nd Floor</option><option value="Roof">Roof</option>
+        </select></div>
+      <div class="form-group"><label class="form-label">Location</label><input type="text" class="form-input" id="fe-new-location" placeholder="e.g. Near Exit Door"></div>
+      <div class="form-group"><label class="form-label">Type</label>
+        <select class="form-input" id="fe-new-type"><option value="ABC">ABC</option><option value="CO2">CO2</option></select></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" onclick="feCloseAddModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="feSaveNewFE()">Save</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /#app -->
+
+<?!= include('Javascript'); ?>
+<script>
+// GAS template vars — passed from doGet URL params
+try {
+  var OPEN_AREA_ID  = '<?= openAreaID ?>';
+  var OPEN_PLANT_ID = '<?= openPlantID ?>';
+  var OPEN_FE_ID    = '<?= openFEId ?>';
+} catch(e) {
+  var OPEN_AREA_ID  = '';
+  var OPEN_PLANT_ID = '';
+}
+</script>
+</body>
+</html>
