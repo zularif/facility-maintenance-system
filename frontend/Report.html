@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inspection Report</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue: #1a56db; --blue-dark: #1e429f; --blue-light: #e8f0fe;
+      --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+      --gray-400: #9ca3af; --gray-500: #6b7280; --gray-700: #374151; --gray-800: #1f2937;
+      --green: #16a34a; --red: #dc2626; --orange: #ea580c;
+      --radius: 8px; --shadow: 0 2px 8px rgba(0,0,0,.10);
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--gray-50); color: var(--gray-800); font-size: 14px; min-height: 100vh; }
+
+    /* TOP BAR */
+    #topbar { background: var(--blue); color: white; display: flex; align-items: center; gap: 12px; padding: 0 20px; height: 54px; box-shadow: 0 2px 8px rgba(0,0,0,.2); position: sticky; top: 0; z-index: 100; }
+    #topbar a { color: rgba(255,255,255,.85); text-decoration: none; font-size: 13px; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 6px; }
+    #topbar a:hover { background: rgba(255,255,255,.15); color: white; }
+    #topbar .title { flex: 1; font-weight: 700; font-size: 15px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
+    .btn-outline-w { background: transparent; color: white; border: 1.5px solid rgba(255,255,255,.5); }
+    .btn-outline-w:hover { background: rgba(255,255,255,.15); }
+    .btn-white { background: white; color: var(--blue); }
+    .btn-white:hover { background: var(--blue-light); }
+
+    /* FILTER PANEL */
+    #filter-panel { background: white; border-bottom: 1px solid var(--gray-200); padding: 14px 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .fg { display: flex; flex-direction: column; gap: 4px; }
+    .fg.grow { flex: 1; min-width: 140px; }
+    .fl { font-size: 11px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .3px; }
+    .fs, .fi { border: 1.5px solid var(--gray-200); border-radius: var(--radius); padding: 8px 10px; font-size: 13px; color: var(--gray-800); outline: none; background: white; transition: border-color .2s; width: 100%; }
+    .fs:focus, .fi:focus { border-color: var(--blue); }
+
+    /* MAIN */
+    #main { padding: 20px; }
+
+    /* PLACEHOLDER */
+    #placeholder { text-align: center; padding: 60px 20px; color: var(--gray-400); }
+    #placeholder svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: .4; }
+    #placeholder h2 { font-size: 17px; color: var(--gray-500); margin-bottom: 6px; }
+    #placeholder p { font-size: 13px; }
+    .spinner-wrap { text-align: center; padding: 50px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--gray-200); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* SUMMARY */
+    .summary { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+    .sc { background: white; border-radius: var(--radius); border: 1px solid var(--gray-200); padding: 12px 14px; box-shadow: var(--shadow); }
+    .sc .sl { font-size: 11px; color: var(--gray-500); font-weight: 600; text-transform: uppercase; }
+    .sc .sv { font-size: 20px; font-weight: 700; margin: 3px 0 1px; }
+    .sc .ss { font-size: 11px; font-weight: 600; color: var(--gray-500); }
+
+    /* REPORT BLOCK */
+    .report-block { background: white; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 20px; }
+    .rpt-header { background: var(--blue); color: white; padding: 16px 20px; }
+    .rpt-plant { font-size: 11px; opacity: .8; margin-bottom: 3px; }
+    .rpt-name { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+    .rpt-meta { font-size: 11px; opacity: .75; display: flex; gap: 14px; flex-wrap: wrap; }
+    .rpt-range { float: right; text-align: right; font-size: 11px; opacity: .8; }
+    .rpt-range strong { font-size: 13px; display: block; }
+
+    .rpt-table-wrap { overflow-x: auto; }
+    table.rpt { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .rpt th { background: var(--gray-50); border-bottom: 2px solid var(--gray-200); padding: 8px 10px; text-align: center; font-weight: 700; color: var(--gray-700); white-space: nowrap; font-size: 12px; }
+    .rpt th.pcol { text-align: left; min-width: 200px; }
+    .rpt td { padding: 7px 10px; border-bottom: 1px solid var(--gray-100); text-align: center; white-space: nowrap; }
+    .rpt td.pname { text-align: left; font-weight: 500; }
+    .rpt tr:hover td { background: var(--gray-50); }
+    .val-none { color: var(--gray-400); }
+    .val-ok { color: var(--gray-800); font-weight: 500; }
+    .val-oor { color: var(--red); font-weight: 700; }
+    .rpt tr.divrow td { border-top: 2px solid var(--gray-300); }
+    .rpt tr.frow td { background: var(--gray-50); font-weight: 600; font-size: 12px; }
+    .rpt tr.frow td.pname { color: var(--gray-500); text-transform: uppercase; letter-spacing: .3px; }
+    .st-ok { color: var(--green); font-weight: 700; }
+    .st-att { color: var(--red); font-weight: 700; }
+    .oos-ok { color: var(--green); font-weight: 700; }
+    .oos-bad { color: var(--red); font-weight: 700; }
+    .legend { background: #fef9c3; border-top: 1px solid var(--gray-200); padding: 8px 14px; font-size: 12px; color: var(--orange); }
+    .no-params { padding: 16px; text-align: center; font-size: 13px; color: var(--gray-400); }
+
+    /* REVIEW SECTION */
+    .review-section {
+      border-top: 2px solid var(--gray-200);
+      padding: 20px;
+      background: white;
+    }
+    .review-section.filled {
+      background: #f0fdf4;
+      border-top-color: var(--green);
+    }
+    .review-title {
+      font-size: 13px; font-weight: 700; color: var(--gray-700);
+      text-transform: uppercase; letter-spacing: .5px; margin-bottom: 16px;
+    }
+    .review-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    .review-field { display: flex; flex-direction: column; gap: 6px; }
+    .review-label { font-size: 12px; font-weight: 600; color: var(--gray-500); }
+    .review-value {
+      font-size: 14px; font-weight: 600; color: var(--gray-800);
+      border-bottom: 1.5px solid var(--gray-300);
+      padding: 6px 0; min-width: 200px; min-height: 28px;
+    }
+    .review-value.blank { color: var(--gray-300); font-weight: 400; font-style: italic; }
+    .review-remarks { grid-column: 1 / -1; }
+    .review-sig { grid-column: 1 / -1; }
+
+    /* REVIEW ACTION BAR */
+    #review-bar {
+      position: sticky; bottom: 0; background: white;
+      border-top: 1px solid var(--gray-200);
+      padding: 12px 20px; display: flex; align-items: center;
+      gap: 12px; box-shadow: 0 -4px 12px rgba(0,0,0,.08);
+      z-index: 50;
+    }
+    #review-bar .bar-info {
+      flex: 1; font-size: 13px; color: var(--gray-500);
+      display: flex; align-items: center; gap: 8px;
+    }
+    #review-bar.reviewed { background: #f0fdf4; border-top-color: var(--green); }
+
+    /* MODAL */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.5);
+      z-index: 200; display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: white; border-radius: 14px; width: 100%; max-width: 460px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.15); overflow: hidden;
+    }
+    .modal-header {
+      background: var(--blue); color: white;
+      padding: 16px 20px; font-size: 15px; font-weight: 700;
+    }
+    .modal-body { padding: 20px; }
+    .mf { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+    .ml { font-size: 12px; font-weight: 700; color: var(--gray-600); text-transform: uppercase; letter-spacing: .3px; }
+    .mi, .mt {
+      border: 1.5px solid var(--gray-200); border-radius: 8px;
+      padding: 9px 12px; font-size: 13px; font-family: inherit;
+      color: var(--gray-800); outline: none; transition: border-color .2s;
+      width: 100%;
+    }
+    .mi:focus, .mt:focus { border-color: var(--blue); }
+    .mt { min-height: 80px; resize: vertical; }
+    .modal-footer {
+      padding: 14px 20px; border-top: 1px solid var(--gray-200);
+      display: flex; gap: 10px; justify-content: flex-end;
+    }
+    .btn-cancel { background: var(--gray-100); color: var(--gray-700); border: none; border-radius: 8px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-confirm { background: var(--blue); color: white; border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .btn-confirm:hover { background: var(--blue-dark); }
+
+    /* SIGNATURE PAD */
+    .sig-wrap { border: 1.5px solid var(--gray-200); border-radius: 8px; overflow: hidden; background: white; position: relative; }
+    .sig-wrap canvas { display: block; width: 100%; height: 120px; cursor: crosshair; touch-action: none; }
+    .sig-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); font-size: 12px; color: var(--gray-300); pointer-events: none; text-align: center; line-height: 1.4; }
+    .sig-actions { display: flex; justify-content: flex-end; padding: 6px 8px; border-top: 1px solid var(--gray-100); background: var(--gray-50); }
+    .btn-clear-sig { background: none; border: 1px solid var(--gray-300); border-radius: 6px; padding: 4px 12px; font-size: 12px; color: var(--gray-600); cursor: pointer; }
+    .btn-clear-sig:hover { background: var(--gray-100); }
+    .sig-preview { width: 100%; max-height: 60px; object-fit: contain; border: 1px solid var(--gray-200); border-radius: 6px; background: white; }
+
+    /* PRINT */
+    @media print {
+      /* Hide browser chrome - URL, date, page number in header/footer */
+      @page {
+        margin: 10mm 12mm;
+        size: A4 landscape;
+      }
+      /* Hide all UI */
+      #topbar, #filter-panel, .no-print,
+      #review-bar, .modal-overlay { display: none !important; }
+
+      body { background: white; margin: 0; }
+      #main { padding: 0; }
+
+      /* Each equipment block */
+      .report-block {
+        box-shadow: none;
+        border-radius: 0;
+        page-break-inside: avoid;
+        margin-bottom: 8px;
+        border: 1px solid #ddd;
+      }
+
+      /* Blue header prints correctly */
+      .rpt-header {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        padding: 10px 14px;
+      }
+
+      /* Smaller text for print */
+      .rpt td, .rpt th { font-size: 9px; padding: 4px 6px; }
+      .rpt-name { font-size: 13px; }
+      .rpt-plant, .rpt-meta { font-size: 10px; }
+
+      /* Summary cards - hide on print */
+      .summary { display: none; }
+
+      /* Review section — keep with last block, never break inside */
+      .review-section {
+        border-top: 2px solid #000;
+        padding: 12px 0 0;
+        page-break-inside: avoid;
+        page-break-before: avoid;
+        margin-top: 0;
+      }
+      .review-title { font-size: 11px; }
+      .review-label { font-size: 10px; }
+      .review-value {
+        border-bottom: 1px solid #000;
+        font-size: 12px;
+        padding: 4px 0;
+        min-height: 24px;
+      }
+      .sig-preview { max-height: 50px; }
+      .review-grid { gap: 10px; }
+      .legend { font-size: 10px; padding: 6px 10px; }
+      .no-params { display: none; }
+    }
+    @media (max-width: 768px) {
+      .summary { grid-template-columns: repeat(2,1fr); }
+      #filter-panel { gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <a href="#" onclick="gasCall('getWebAppUrl').then(function(u){ window.open(u,'_self'); });">&#8592; Back</a>
+  <span class="title">Inspection Report</span>
+  <div id="export-btns" class="no-print" style="display:none;gap:8px">
+    <button class="btn btn-outline-w" onclick="exportCSV()">Export CSV</button>
+    <button class="btn btn-white" onclick="window.print()">Print / PDF</button>
+  </div>
+</div>
+
+<!-- FILTER PANEL -->
+<div id="filter-panel">
+  <div class="fg grow">
+    <div class="fl">Plant</div>
+    <select class="fs" id="f-plant" onchange="onPlantChange()">
+      <option value="">Loading...</option>
+    </select>
+  </div>
+  <div class="fg grow">
+    <div class="fl">Area</div>
+    <select class="fs" id="f-area">
+      <option value="">Select Area</option>
+    </select>
+  </div>
+  <div class="fg">
+    <div class="fl">Date From</div>
+    <input type="date" class="fi" id="f-from">
+  </div>
+  <div class="fg">
+    <div class="fl">Date To</div>
+    <input type="date" class="fi" id="f-to">
+  </div>
+  <div class="fg">
+    <div class="fl">&nbsp;</div>
+    <button class="btn btn-white" style="background:var(--blue);color:white" onclick="generateReport()">Generate</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="placeholder">
+    <div id="init-spinner" class="spinner-wrap">
+      <div class="spinner"></div>
+      <p style="margin-top:10px;color:var(--gray-500);font-size:13px">Loading...</p>
+    </div>
+    <div id="placeholder-msg" style="display:none">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+      <h2>Inspection Report</h2>
+      <p>Select plant, area and date range, then click Generate.<br>All equipment in the area will be shown.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+// GAS template vars — pre-selected from URL params
+var PRE_AREA  = '<?= preAreaID ?>';
+var PRE_EQUIP = '<?= preEquipID ?>';
+
+var RPT = { plants: [], areas: [], equipment: [], reportData: null };
+
+function gasCall(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn].apply(google.script.run, args);
+  });
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  try { return new Date(d + 'T12:00:00').toLocaleDateString('en-MY',{day:'2-digit',month:'short'}); }
+  catch(e) { return d; }
+}
+
+// INIT
+window.addEventListener('load', function() {
+  if (typeof google === 'undefined' || !google.script) {
+    document.getElementById('init-spinner').innerHTML =
+      '<p style="color:red;padding:20px">GAS API unavailable. Open via deployed web app URL.</p>';
+    return;
+  }
+  var today = new Date();
+  var ago = new Date(today); ago.setDate(today.getDate() - 6);
+  // Use local date (not UTC) to avoid off-by-one in UTC+8
+  function localDateStr(d) {
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }
+  document.getElementById('f-to').value   = localDateStr(today);
+  document.getElementById('f-from').value = localDateStr(ago);
+  loadPlants();
+});
+
+function loadPlants() {
+  gasCall('getPlants').then(function(plants) {
+    RPT.plants = plants || [];
+    var sel = document.getElementById('f-plant');
+    sel.innerHTML = '<option value="">Select Plant<\/option>' +
+      RPT.plants.map(function(p){ return '<option value="'+p.plantID+'">'+esc(p.plantName)+'<\/option>'; }).join('');
+
+    document.getElementById('init-spinner').style.display = 'none';
+    document.getElementById('placeholder-msg').style.display = 'block';
+
+    if (PRE_AREA) {
+      gasCall('getAreas').then(function(all) {
+        var found = null;
+        (all||[]).forEach(function(a){ if (a.areaID === PRE_AREA) found = a; });
+        if (found) {
+          sel.value = found.plantID;
+          onPlantChange(function() {
+            document.getElementById('f-area').value = PRE_AREA;
+          });
+        }
+      });
+    }
+  }).catch(function(e) {
+    document.getElementById('init-spinner').innerHTML =
+      '<p style="color:red;padding:20px">Error: '+esc(e.message||String(e))+'<\/p>';
+  });
+}
+
+function onPlantChange(cb) {
+  var plantID = document.getElementById('f-plant').value;
+  document.getElementById('f-area').innerHTML = '<option value="">Select Area<\/option>';
+  if (!plantID) return;
+  gasCall('getAreas', plantID).then(function(areas) {
+    RPT.areas = areas || [];
+    document.getElementById('f-area').innerHTML = '<option value="">Select Area<\/option>' +
+      RPT.areas.map(function(a){ return '<option value="'+a.areaID+'">'+esc(a.areaName)+'<\/option>'; }).join('');
+    if (typeof cb === 'function') cb();
+  });
+}
+
+// GENERATE — loads ALL equipment in selected area
+function generateReport() {
+  var areaID   = document.getElementById('f-area').value;
+  var dateFrom = document.getElementById('f-from').value;
+  var dateTo   = document.getElementById('f-to').value;
+
+  if (!areaID)               { alert('Please select an area.'); return; }
+  if (!dateFrom || !dateTo)  { alert('Please select a date range.'); return; }
+  if (dateFrom > dateTo)     { alert('Date From must be before Date To.'); return; }
+  if (Math.ceil((new Date(dateTo)-new Date(dateFrom))/86400000)+1 > 31) { alert('Maximum 31 days.'); return; }
+
+  document.getElementById('main').innerHTML =
+    '<div class="spinner-wrap"><div class="spinner"><\/div>' +
+    '<p style="margin-top:10px;color:var(--gray-500);font-size:13px">Loading equipment list...</p><\/div>';
+  document.getElementById('export-btns').style.display = 'none';
+
+  // Step 1: get all equipment for this area
+  gasCall('getEquipment', areaID).then(function(equips) {
+    equips = (equips || []).filter(function(e){ return e.status === 'Active' || !e.status; });
+    if (!equips.length) {
+      document.getElementById('main').innerHTML =
+        '<div id="placeholder"><div id="placeholder-msg" style="display:block"><h2>No Equipment<\/h2><p>No active equipment found in this area.<\/p><\/div><\/div>';
+      return;
+    }
+
+    document.getElementById('main').innerHTML =
+      '<div class="spinner-wrap"><div class="spinner"><\/div>' +
+      '<p style="margin-top:10px;color:var(--gray-500);font-size:13px">Generating '+equips.length+' report(s)...</p><\/div>';
+
+    // Step 2: fetch reports for all equipment in parallel
+    var promises = equips.map(function(e){ return gasCall('getEquipmentReport', e.equipID, dateFrom, dateTo); });
+
+    Promise.all(promises).then(function(results) {
+      var valid = results.filter(function(d){ return d && !d.error; });
+      if (!valid.length) {
+        document.getElementById('main').innerHTML =
+          '<div id="placeholder"><div id="placeholder-msg" style="display:block"><h2>No Data<\/h2><p>No inspection records found for this period.<\/p><\/div><\/div>';
+        return;
+      }
+      RPT.reportData = valid;
+      renderAllReports(valid);
+      document.getElementById('export-btns').style.display = 'flex';
+    }).catch(function(e) {
+      document.getElementById('main').innerHTML =
+        '<div id="placeholder"><div id="placeholder-msg" style="display:block"><h2>Error<\/h2><p>'+esc(e.message||String(e))+'<\/p><\/div><\/div>';
+    });
+  });
+}
+
+// RENDER ALL
+function renderAllReports(dataArr) {
+  var totalOOR = 0, totalInsp = 0;
+  var dates = dataArr[0].dates;
+  dataArr.forEach(function(d){
+    totalOOR += d.footer.outOfSpec.reduce(function(s,v){ return s+(v||0); },0);
+    totalInsp += dates.filter(function(dt,i){ return d.footer.tech[i]!==null; }).length;
+  });
+
+  var html = '<div class="summary no-print">' +
+    '<div class="sc"><div class="sl">Area<\/div><div class="sv" style="font-size:14px">'+esc(dataArr[0].areaName)+'<\/div><div class="ss">'+esc(dataArr[0].plantName)+'<\/div><\/div>' +
+    '<div class="sc"><div class="sl">Period<\/div><div class="sv" style="font-size:14px">'+fmtDate(dates[0])+' &ndash; '+fmtDate(dates[dates.length-1])+'<\/div><div class="ss">'+dates.length+' days<\/div><\/div>' +
+    '<div class="sc"><div class="sl">Equipment<\/div><div class="sv" style="color:var(--blue)">'+dataArr.length+'<\/div><div class="ss">in report<\/div><\/div>' +
+    '<div class="sc"><div class="sl">Out of Range<\/div><div class="sv" style="color:'+(totalOOR>0?'var(--red)':'var(--green)')+'">'+totalOOR+'<\/div><div class="ss">total readings<\/div><\/div>' +
+  '<\/div>';
+
+  // Render all blocks; attach review section inside the LAST block
+  dataArr.forEach(function(data, idx) {
+    if (idx < dataArr.length - 1) {
+      html += renderBlock(data);
+    } else {
+      // Last block — inject review section before closing </div>
+      html += renderBlockWithReview(data, RPT.review);
+    }
+  });
+
+  document.getElementById('main').innerHTML = html;
+
+  // Show action bar
+  var bar = document.getElementById('review-bar');
+  if (bar) bar.style.display = 'flex';
+  // Hide old export-btns (replaced by review bar)
+  var eb = document.getElementById('export-btns');
+  if (eb) eb.style.display = 'none';
+}
+
+// REVIEW STATE
+RPT.review = null; // { name, date, dateRaw, remarks, signatureImg }
+
+// ── SIGNATURE PAD ─────────────────────────────────────────────
+var SIG = {
+  canvas: null, ctx: null,
+  drawing: false, hasDrawn: false,
+  lastX: 0, lastY: 0
+};
+
+function initSignaturePad() {
+  SIG.canvas = document.getElementById('sig-canvas');
+  if (!SIG.canvas) return;
+  SIG.ctx = SIG.canvas.getContext('2d');
+  SIG.ctx.strokeStyle = '#1a1a1a';
+  SIG.ctx.lineWidth   = 2.5;
+  SIG.ctx.lineCap     = 'round';
+  SIG.ctx.lineJoin    = 'round';
+  SIG.drawing  = false;
+  SIG.hasDrawn = false;
+
+  // Mouse events
+  SIG.canvas.addEventListener('mousedown',  sigStart);
+  SIG.canvas.addEventListener('mousemove',  sigMove);
+  SIG.canvas.addEventListener('mouseup',    sigEnd);
+  SIG.canvas.addEventListener('mouseleave', sigEnd);
+
+  // Touch events
+  SIG.canvas.addEventListener('touchstart',  sigTouchStart,  { passive: false });
+  SIG.canvas.addEventListener('touchmove',   sigTouchMove,   { passive: false });
+  SIG.canvas.addEventListener('touchend',    sigEnd);
+  SIG.canvas.addEventListener('touchcancel', sigEnd);
+}
+
+function getPos(e) {
+  var rect = SIG.canvas.getBoundingClientRect();
+  var scaleX = SIG.canvas.width  / rect.width;
+  var scaleY = SIG.canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top)  * scaleY
+  };
+}
+
+function sigStart(e) {
+  SIG.drawing = true;
+  var pos = getPos(e);
+  SIG.lastX = pos.x; SIG.lastY = pos.y;
+  SIG.ctx.beginPath();
+  SIG.ctx.moveTo(pos.x, pos.y);
+  // Hide hint on first draw
+  var hint = document.getElementById('sig-hint');
+  if (hint) hint.style.display = 'none';
+}
+
+function sigMove(e) {
+  if (!SIG.drawing) return;
+  e.preventDefault();
+  var pos = getPos(e);
+  SIG.ctx.lineTo(pos.x, pos.y);
+  SIG.ctx.stroke();
+  SIG.ctx.beginPath();
+  SIG.ctx.moveTo(pos.x, pos.y);
+  SIG.hasDrawn = true;
+  SIG.lastX = pos.x; SIG.lastY = pos.y;
+}
+
+function sigEnd() { SIG.drawing = false; SIG.ctx.beginPath(); }
+
+function sigTouchStart(e) {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    var t = e.touches[0];
+    sigStart({ clientX: t.clientX, clientY: t.clientY });
+  }
+}
+
+function sigTouchMove(e) {
+  e.preventDefault();
+  if (e.touches.length > 0) {
+    var t = e.touches[0];
+    sigMove({ clientX: t.clientX, clientY: t.clientY, preventDefault: function(){} });
+  }
+}
+
+function clearSignature() {
+  if (!SIG.ctx) return;
+  SIG.ctx.clearRect(0, 0, SIG.canvas.width, SIG.canvas.height);
+  SIG.hasDrawn = false;
+  var hint = document.getElementById('sig-hint');
+  if (hint) hint.style.display = 'block';
+}
+
+function isCanvasBlank() {
+  if (!SIG.canvas) return true;
+  var data = SIG.ctx.getImageData(0, 0, SIG.canvas.width, SIG.canvas.height).data;
+  for (var i = 3; i < data.length; i += 4) {
+    if (data[i] > 0) return false;
+  }
+  return true;
+}
+
+function renderReviewSection(review) {
+  var filled = review && review.name;
+  var today = new Date().toLocaleDateString('en-MY', {day:'2-digit', month:'long', year:'numeric'});
+
+  var h = '<div class="review-section' + (filled ? ' filled' : '') + '" id="review-section">';
+  h += '<div class="review-title">Reviewed By (Supervisor)<\/div>';
+  h += '<div class="review-grid">';
+
+  // Signature
+  h += '<div class="review-field review-sig">';
+  h += '<div class="review-label">Signature<\/div>';
+  if (filled && review.signatureImg) {
+    h += '<img class="sig-preview" src="' + review.signatureImg + '" alt="Signature">';
+  } else {
+    h += '<div class="review-value blank" style="min-height:60px">Awaiting signature<\/div>';
+  }
+  h += '<\/div>';
+
+  // Name
+  h += '<div class="review-field">';
+  h += '<div class="review-label">Name<\/div>';
+  h += '<div class="review-value ' + (filled ? '' : 'blank') + '">' + (filled ? esc(review.name) : 'Not yet reviewed') + '<\/div>';
+  h += '<\/div>';
+
+  // Date
+  h += '<div class="review-field">';
+  h += '<div class="review-label">Date<\/div>';
+  h += '<div class="review-value ' + (filled ? '' : 'blank') + '">' + (filled ? esc(review.date) : '&mdash;') + '<\/div>';
+  h += '<\/div>';
+
+  // Remarks full width
+  h += '<div class="review-field review-remarks">';
+  h += '<div class="review-label">Remarks<\/div>';
+  h += '<div class="review-value ' + (filled ? '' : 'blank') + '" style="min-height:36px;white-space:pre-wrap">' + (filled && review.remarks ? esc(review.remarks) : (filled ? '&mdash;' : 'No remarks')) + '<\/div>';
+  h += '<\/div>';
+
+  h += '<\/div>'; // review-grid
+  h += '<\/div>'; // review-section
+  return h;
+}
+
+function openReviewModal() {
+  var today = new Date().toISOString().split('T')[0];
+  var nameEl = document.getElementById('rv-name');
+  var dateEl = document.getElementById('rv-date');
+  var rmkEl  = document.getElementById('rv-remarks');
+  if (RPT.review) {
+    if (nameEl) nameEl.value = RPT.review.name    || '';
+    if (dateEl) dateEl.value = RPT.review.dateRaw || today;
+    if (rmkEl)  rmkEl.value  = RPT.review.remarks || '';
+  } else {
+    if (nameEl) nameEl.value = '';
+    if (dateEl) dateEl.value = today;
+    if (rmkEl)  rmkEl.value  = '';
+  }
+  document.getElementById('review-modal').classList.add('open');
+  // Init signature pad after modal is visible
+  setTimeout(function() {
+    initSignaturePad();
+    clearSignature(); // start fresh
+    if (nameEl) nameEl.focus();
+  }, 50);
+}
+
+function closeReviewModal() {
+  document.getElementById('review-modal').classList.remove('open');
+}
+
+function submitReview() {
+  var name    = (document.getElementById('rv-name').value || '').trim();
+  var dateRaw = document.getElementById('rv-date').value;
+  var remarks = (document.getElementById('rv-remarks').value || '').trim();
+
+  if (!name) { alert('Please enter the reviewer name.'); return; }
+  if (isCanvasBlank()) { alert('Please sign before confirming.'); return; }
+
+  // Capture signature as PNG data URL (white background)
+  var tempCanvas = document.createElement('canvas');
+  tempCanvas.width  = SIG.canvas.width;
+  tempCanvas.height = SIG.canvas.height;
+  var tCtx = tempCanvas.getContext('2d');
+  tCtx.fillStyle = '#ffffff';
+  tCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+  tCtx.drawImage(SIG.canvas, 0, 0);
+  var signatureImg = tempCanvas.toDataURL('image/png');
+
+  // Format date for display
+  var dateDisplay = dateRaw;
+  try {
+    dateDisplay = new Date(dateRaw + 'T12:00:00').toLocaleDateString('en-MY', {
+      day: '2-digit', month: 'long', year: 'numeric'
+    });
+  } catch(e) {}
+
+  RPT.review = { name: name, date: dateDisplay, dateRaw: dateRaw, remarks: remarks, signatureImg: signatureImg };
+  closeReviewModal();
+
+  // Update review section in DOM (it's inside the last report block)
+  var section = document.getElementById('review-section');
+  if (section) {
+    var newSection = document.createElement('div');
+    newSection.innerHTML = renderReviewSection(RPT.review);
+    section.parentNode.replaceChild(newSection.firstChild, section);
+  }
+
+  // Update review bar
+  var bar = document.getElementById('review-bar');
+  var barInfo = document.getElementById('review-bar-info');
+  if (bar) bar.classList.add('reviewed');
+  if (barInfo) barInfo.innerHTML =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"><\/path><polyline points="22 4 12 14.01 9 11.01"><\/polyline><\/svg>' +
+    ' Reviewed by <strong>' + esc(name) + '<\/strong> &mdash; ' + dateDisplay;
+}
+
+// Close modal on overlay click
+document.addEventListener('click', function(e) {
+  if (e.target.id === 'review-modal') closeReviewModal();
+});
+
+// RENDER LAST BLOCK WITH REVIEW SECTION INSIDE
+function renderBlockWithReview(data, review) {
+  // Build the block but insert review before the closing </div>
+  var block = renderBlock(data);
+  var reviewHtml = renderReviewSection(review);
+  // Insert review inside the report-block div (before closing tag)
+  return block.replace(/<\/div>\s*$/, reviewHtml + '</div>');
+}
+
+// RENDER ONE BLOCK
+function renderBlock(data) {
+  var dates = data.dates, params = data.params, footer = data.footer;
+  var hasOOR = footer.outOfSpec.some(function(n){ return n > 0; });
+
+  var dh = dates.map(function(d){ return '<th>'+fmtDate(d)+'<\/th>'; }).join('');
+
+  var rows = params.map(function(p) {
+    var lbl = esc(p.parameterName);
+    var rng = p.rangeLabel ? ' <span style="color:var(--gray-400);font-size:11px">'+esc(p.rangeLabel)+'<\/span>' : '';
+    var cells = p.cells.map(function(c) {
+      if (c.value===null||c.value===undefined||c.value===''||c.value==='-') return '<td class="val-none">&mdash;<\/td>';
+      if (c.status==='OutOfRange') return '<td class="val-oor">'+esc(String(c.value))+'*<\/td>';
+      return '<td class="val-ok">'+esc(String(c.value))+'<\/td>';
+    }).join('');
+    return '<tr><td class="pname">'+lbl+rng+'<\/td>'+cells+'<\/tr>';
+  }).join('');
+
+  var techRow   = footer.tech.map(function(t){ return '<td>'+(t?esc(t):'<span class="val-none">&mdash;<\/span>')+'<\/td>'; }).join('');
+  var statusRow = footer.status.map(function(s){ if(!s) return '<td><span class="val-none">&mdash;<\/span><\/td>'; return '<td class="'+(s==='Normal'?'st-ok':'st-att')+'">'+s+'<\/td>'; }).join('');
+  var oosRow    = footer.outOfSpec.map(function(n){ if(n===null||n===undefined) return '<td><span class="val-none">&mdash;<\/span><\/td>'; return '<td class="'+(n===0?'oos-ok':'oos-bad')+'">'+n+'<\/td>'; }).join('');
+
+  var h = '<div class="report-block">';
+  h += '<div class="rpt-header">';
+  h += '<div class="rpt-range"><strong>Inspection Report<\/strong>'+fmtDate(dates[0])+' &ndash; '+fmtDate(dates[dates.length-1])+'<\/div>';
+  h += '<div class="rpt-plant">'+esc(data.plantName)+' &rsaquo; '+esc(data.areaName)+'<\/div>';
+  h += '<div class="rpt-name">'+esc(data.equipInfo.name)+'<\/div>';
+  h += '<div class="rpt-meta">'+(data.equipInfo.category?'<span>'+esc(data.equipInfo.category)+'<\/span>  ':'')+
+       '<span>Cycle: '+esc(data.equipInfo.cycle)+'<\/span>  <span>Tag: '+esc(data.equipInfo.assetTag)+'<\/span><\/div>';
+  h += '<\/div>';
+
+  if (!params.length) {
+    h += '<div class="no-params">No parameters defined for this equipment.<\/div>';
+  } else {
+    h += '<div class="rpt-table-wrap"><table class="rpt">';
+    h += '<thead><tr><th class="pcol">Parameter<\/th>'+dh+'<\/tr><\/thead>';
+    h += '<tbody>'+rows;
+    h += '<tr class="divrow frow"><td class="pname">Technician<\/td>'+techRow+'<\/tr>';
+    h += '<tr class="frow"><td class="pname">Status<\/td>'+statusRow+'<\/tr>';
+    h += '<tr class="frow"><td class="pname">Out of Spec<\/td>'+oosRow+'<\/tr>';
+    h += '<\/tbody><\/table><\/div>';
+    if (hasOOR) h += '<div class="legend"><strong>*<\/strong> Value outside specified range.<\/div>';
+  }
+  h += '<\/div>';
+  return h;
+}
+
+// EXPORT CSV
+function exportCSV() {
+  var dataArr = RPT.reportData;
+  if (!dataArr || !dataArr.length) return;
+  var dates = dataArr[0].dates;
+  var rows = [];
+  var areaName = dataArr[0].areaName;
+
+  rows.push([areaName + ' — Inspection Report']);
+  rows.push([dataArr[0].plantName]);
+  rows.push(['Period: ' + fmtDate(dates[0]) + ' to ' + fmtDate(dates[dates.length-1])]);
+  rows.push([]);
+
+  dataArr.forEach(function(data, idx) {
+    if (idx > 0) rows.push([]);
+    rows.push([data.equipInfo.name + (data.equipInfo.category ? ' (' + data.equipInfo.category + ')' : '')]);
+    rows.push(['Tag: ' + data.equipInfo.assetTag + '  Cycle: ' + data.equipInfo.cycle]);
+    rows.push([]);
+    rows.push(['Parameter'].concat(dates.map(fmtDate)));
+    data.params.forEach(function(p) {
+      var row = [p.parameterName + (p.rangeLabel ? ' ' + p.rangeLabel : '')];
+      p.cells.forEach(function(c) {
+        if (!c.value && c.value !== 0) row.push('');
+        else row.push(c.status === 'OutOfRange' ? c.value + '*' : c.value);
+      });
+      rows.push(row);
+    });
+    rows.push([]);
+    rows.push(['Technician'].concat(data.footer.tech.map(function(t){ return t||''; })));
+    rows.push(['Status'].concat(data.footer.status.map(function(s){ return s||''; })));
+    rows.push(['Out of Spec'].concat(data.footer.outOfSpec.map(function(n){ return n!==null?n:''; })));
+  });
+
+  rows.push([]); rows.push(['* Value outside specified range']);
+
+  // Add review section to CSV
+  rows.push([]);
+  rows.push(['REVIEWED BY (SUPERVISOR)']);
+  rows.push(['Name', RPT.review ? RPT.review.name : '']);
+  rows.push(['Date', RPT.review ? RPT.review.date : '']);
+  rows.push(['Remarks', RPT.review ? (RPT.review.remarks || '') : '']);
+  rows.push(['Signature', '']);
+
+  var csv = rows.map(function(row){
+    return row.map(function(cell){
+      var s = String(cell===null||cell===undefined?'':cell);
+      return (s.indexOf(',')>=0||s.indexOf('"')>=0)?'"'+s.replace(/"/g,'""')+'"':s;
+    }).join(',');
+  }).join('\r\n');
+
+  var blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = areaName.replace(/[^a-zA-Z0-9]/g,'_')+'_'+dates[0]+'_to_'+dates[dates.length-1]+'.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+
+<!-- REVIEW MODAL -->
+<div class="modal-overlay" id="review-modal">
+  <div class="modal">
+    <div class="modal-header">Reviewed By (Supervisor)</div>
+    <div class="modal-body">
+      <div class="mf">
+        <label class="ml">Reviewer Name *</label>
+        <input type="text" class="mi" id="rv-name" placeholder="Full name">
+      </div>
+      <div class="mf">
+        <label class="ml">Date</label>
+        <input type="date" class="mi" id="rv-date">
+      </div>
+      <div class="mf">
+        <label class="ml">Signature * <span style="font-size:11px;color:var(--gray-400);text-transform:none;font-weight:400">(draw with finger or mouse)</span></label>
+        <div class="sig-wrap">
+          <canvas id="sig-canvas" width="800" height="240"></canvas>
+          <div class="sig-hint" id="sig-hint">&#9998; Sign here</div>
+          <div class="sig-actions">
+            <button class="btn-clear-sig" onclick="clearSignature()">Clear</button>
+          </div>
+        </div>
+      </div>
+      <div class="mf">
+        <label class="ml">Remarks</label>
+        <textarea class="mt" id="rv-remarks" placeholder="Optional remarks or observations..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeReviewModal()">Cancel</button>
+      <button class="btn-confirm" onclick="submitReview()">Confirm &amp; Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- REVIEW ACTION BAR -->
+<div id="review-bar" style="display:none">
+  <div class="bar-info" id="review-bar-info">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+    Report generated. Add supervisor review before printing.
+  </div>
+  <button class="btn btn-outline-w no-print" style="background:white;color:var(--blue);border:1.5px solid var(--blue)" onclick="openReviewModal()">
+    + Add Review
+  </button>
+  <button class="btn btn-outline-w no-print" style="background:transparent;color:var(--gray-600);border:1.5px solid var(--gray-300)" onclick="window.print()">
+    Print Blank
+  </button>
+  <button class="btn btn-white no-print" style="background:var(--blue);color:white" onclick="exportCSV()">
+    Export CSV
+  </button>
+</div>
+
+</body>
+</html>
