@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Panel — Factory Maintenance Platform</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue-primary: #1a56db; --blue-dark: #1e429f; --blue-darker: #163172;
+      --blue-light: #e8f0fe; --blue-xlight: #f0f4ff;
+      --white: #ffffff; --gray-50: #f9fafb; --gray-100: #f3f4f6;
+      --gray-200: #e5e7eb; --gray-300: #d1d5db; --gray-400: #9ca3af;
+      --gray-500: #6b7280; --gray-600: #4b5563; --gray-700: #374151; --gray-800: #1f2937;
+      --green-100: #dcfce7; --green-500: #22c55e; --green-600: #16a34a;
+      --orange-100: #ffedd5; --orange-600: #ea580c;
+      --red-50: #fef2f2; --red-100: #fee2e2; --red-500: #ef4444; --red-600: #dc2626;
+      --purple-100: #ede9fe; --purple-500: #8b5cf6;
+      --radius-sm: 6px; --radius: 10px; --radius-lg: 14px; --radius-xl: 18px;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.08); --shadow: 0 4px 12px rgba(0,0,0,.10);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,.12);
+      --nav-h: 64px; --sidebar-w: 240px;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--gray-50); color: var(--gray-800); min-height: 100vh; font-size: 14px; }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: var(--gray-100); } ::-webkit-scrollbar-thumb { background: var(--gray-300); border-radius: 3px; }
+
+    /* Loading */
+    #loading-overlay { position: fixed; inset: 0; background: var(--blue-primary); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; transition: opacity .3s; }
+    #loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner { width: 36px; height: 36px; border: 3px solid rgba(255,255,255,.3); border-top-color: white; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-logo { color: white; font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+    .loading-sub { color: rgba(255,255,255,.7); font-size: 13px; margin-top: 12px; }
+
+    /* PIN Gate */
+    #pin-gate { position: fixed; inset: 0; background: linear-gradient(135deg, var(--blue-darker), var(--blue-primary)); display: flex; align-items: center; justify-content: center; z-index: 800; }
+    #pin-gate.hidden { display: none; }
+    .pin-card { background: white; border-radius: var(--radius-xl); padding: 36px 32px; width: 100%; max-width: 380px; box-shadow: var(--shadow-lg); text-align: center; }
+    .pin-card-icon { width: 60px; height: 60px; background: var(--blue-primary); border-radius: 16px; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+    .pin-card-icon svg { width: 30px; height: 30px; color: white; }
+    .pin-card-title { font-size: 18px; font-weight: 700; color: var(--gray-800); }
+    .pin-card-sub { font-size: 13px; color: var(--gray-500); margin-top: 4px; margin-bottom: 20px; }
+    .pin-dots { display: flex; gap: 10px; justify-content: center; margin: 16px 0; }
+    .pin-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--gray-300); background: transparent; transition: all .2s; }
+    .pin-dot.filled { background: var(--blue-primary); border-color: var(--blue-primary); }
+    .pin-pad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .pin-key { background: var(--gray-100); border: none; border-radius: var(--radius); padding: 14px; font-size: 17px; font-weight: 600; cursor: pointer; color: var(--gray-800); transition: all .2s; }
+    .pin-key:hover { background: var(--blue-light); color: var(--blue-primary); }
+    .pin-key.del { background: var(--red-50); color: var(--red-600); }
+    .pin-key.enter { background: var(--blue-primary); color: white; }
+    .pin-error { background: var(--red-50); color: var(--red-600); border: 1px solid var(--red-100); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; margin-top: 12px; display: none; }
+
+    /* Top Nav */
+    #top-nav { position: fixed; top: 0; left: 0; right: 0; height: var(--nav-h); background: var(--blue-primary); display: flex; align-items: center; padding: 0 20px; z-index: 700; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+    .nav-logo { display: flex; align-items: center; gap: 8px; color: white; font-weight: 700; font-size: 15px; text-decoration: none; flex: 1; }
+    .nav-badge { background: rgba(255,255,255,.2); color: white; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+    .nav-back-link { color: rgba(255,255,255,.8); font-size: 13px; text-decoration: none; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: var(--radius-sm); transition: all .2s; }
+    .nav-back-link:hover { background: rgba(255,255,255,.15); color: white; }
+
+    /* Layout */
+    #app { display: flex; margin-top: var(--nav-h); min-height: calc(100vh - var(--nav-h)); }
+    #admin-sidebar { width: var(--sidebar-w); background: white; border-right: 1px solid var(--gray-200); flex-shrink: 0; padding: 16px 8px; position: sticky; top: var(--nav-h); height: calc(100vh - var(--nav-h)); overflow-y: auto; }
+    .sidebar-section-label { font-size: 11px; font-weight: 700; color: var(--gray-400); text-transform: uppercase; letter-spacing: .5px; padding: 8px 12px 4px; }
+    .sidebar-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-sm); cursor: pointer; color: var(--gray-700); font-size: 13px; font-weight: 500; transition: all .2s; margin-bottom: 2px; }
+    .sidebar-item:hover { background: var(--blue-xlight); color: var(--blue-primary); }
+    .sidebar-item.active { background: var(--blue-light); color: var(--blue-primary); font-weight: 700; }
+    .sidebar-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .sidebar-item .item-count { margin-left: auto; background: var(--gray-200); color: var(--gray-600); font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+    .sidebar-divider { height: 1px; background: var(--gray-200); margin: 8px 0; }
+
+    /* Main */
+    #main-content { flex: 1; padding: 24px; overflow-y: auto; min-width: 0; }
+    .section { display: none; }
+    .section.active { display: block; }
+    .page-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .page-title { font-size: 22px; font-weight: 700; color: var(--gray-800); }
+    .page-subtitle { font-size: 13px; color: var(--gray-500); margin-top: 2px; }
+
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; border: none; }
+    .btn-primary { background: var(--blue-primary); color: white; } .btn-primary:hover { background: var(--blue-dark); }
+    .btn-outline { background: white; color: var(--blue-primary); border: 1.5px solid var(--blue-primary); } .btn-outline:hover { background: var(--blue-xlight); }
+    .btn-danger { background: var(--red-500); color: white; } .btn-danger:hover { background: var(--red-600); }
+    .btn-ghost { background: transparent; color: var(--gray-600); border: 1.5px solid var(--gray-200); } .btn-ghost:hover { background: var(--gray-100); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* Toolbar */
+    .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+    .search-box { display: flex; align-items: center; gap: 8px; background: white; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 8px 12px; flex: 1; min-width: 200px; }
+    .search-box input { border: none; outline: none; flex: 1; font-size: 13px; }
+    .filter-sel { background: white; border: 1px solid var(--gray-200); border-radius: var(--radius); padding: 8px 12px; font-size: 13px; color: var(--gray-700); cursor: pointer; outline: none; }
+
+    /* Table */
+    .table-wrap { background: white; border-radius: var(--radius-lg); border: 1px solid var(--gray-200); overflow: hidden; box-shadow: var(--shadow-sm); overflow-x: auto; }
+    .data-table { width: 100%; border-collapse: collapse; min-width: 600px; }
+    .data-table th { background: var(--gray-50); border-bottom: 2px solid var(--gray-200); padding: 11px 14px; text-align: left; font-size: 12px; font-weight: 700; color: var(--gray-500); text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+    .data-table td { padding: 12px 14px; border-bottom: 1px solid var(--gray-100); font-size: 13px; color: var(--gray-700); vertical-align: middle; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: var(--gray-50); }
+    .data-table .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .id-chip { font-family: monospace; font-size: 11px; background: var(--gray-100); color: var(--gray-600); padding: 2px 6px; border-radius: 4px; }
+    .table-empty { text-align: center; padding: 40px; color: var(--gray-400); font-size: 13px; }
+
+    /* Badges */
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-active { background: var(--green-100); color: var(--green-600); }
+    .badge-inactive { background: var(--gray-100); color: var(--gray-500); }
+    .badge-admin { background: var(--blue-light); color: var(--blue-primary); }
+    .badge-tech { background: var(--purple-100); color: var(--purple-500); }
+    .badge-blue { background: var(--blue-light); color: var(--blue-primary); }
+    .badge-cat { background: var(--orange-100); color: var(--orange-600); }
+
+    /* Forms */
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 700; color: var(--gray-600); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .3px; }
+    .form-label .required { color: var(--red-500); margin-left: 2px; }
+    .form-input, .form-select, .form-textarea { width: 100%; border: 1.5px solid var(--gray-200); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 13px; outline: none; transition: all .2s; font-family: inherit; color: var(--gray-800); background: white; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--blue-primary); box-shadow: 0 0 0 3px rgba(26,86,219,.08); }
+    .form-textarea { min-height: 80px; resize: vertical; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .form-row.col3 { grid-template-columns: 1fr 1fr 1fr; }
+    .form-hint { font-size: 11px; color: var(--gray-400); margin-top: 4px; }
+
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2000; display: none; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; animation: fadeIn .15s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .modal { background: white; border-radius: var(--radius-xl); width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: slideUp .2s ease; }
+    .modal-lg { max-width: 680px; }
+    @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 24px; border-bottom: 1px solid var(--gray-200); }
+    .modal-title { font-size: 16px; font-weight: 700; color: var(--gray-800); }
+    .modal-close { background: none; border: none; cursor: pointer; color: var(--gray-400); padding: 4px; border-radius: var(--radius-sm); font-size: 18px; line-height: 1; }
+    .modal-close:hover { background: var(--gray-100); }
+    .modal-body { padding: 24px; }
+    .modal-footer { padding: 16px 24px; border-top: 1px solid var(--gray-200); display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* Confirm */
+    .confirm-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--red-100); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+    .confirm-icon svg { width: 28px; height: 28px; color: var(--red-600); }
+    .confirm-title { font-size: 16px; font-weight: 700; color: var(--gray-800); text-align: center; margin-bottom: 8px; }
+    .confirm-msg { font-size: 13px; color: var(--gray-500); text-align: center; }
+
+    /* Toast */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 3000; display: flex; flex-direction: column; gap: 8px; }
+    .toast { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-radius: var(--radius); font-size: 13px; min-width: 240px; box-shadow: var(--shadow-lg); animation: slideRight .2s ease; }
+    @keyframes slideRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    .toast.success { background: var(--green-600); color: white; }
+    .toast.error { background: var(--red-600); color: white; }
+    .toast.info { background: var(--blue-primary); color: white; }
+
+    /* Type chips */
+    .type-chip { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
+    .type-numeric { background: var(--blue-light); color: var(--blue-primary); }
+    .type-yesno { background: var(--green-100); color: var(--green-600); }
+    .type-text { background: var(--purple-100); color: var(--purple-500); }
+
+    @media (max-width: 768px) {
+      #admin-sidebar { display: none; }
+      #main-content { padding: 14px; }
+      .form-row, .form-row.col3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="loading-overlay" style="display:none">
+  <div class="loading-logo">&#9881; Admin Panel</div>
+  <div class="loading-spinner"></div>
+  <div class="loading-sub">Loading...</div>
+</div>
+
+<!-- PIN GATE -->
+<div id="pin-gate">
+  <div class="pin-card">
+    <div class="pin-card-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+    </div>
+    <div class="pin-card-title">Admin Access</div>
+    <div class="pin-card-sub">Enter admin PIN to continue</div>
+    <div class="pin-dots">
+      <div class="pin-dot" id="ad0"></div><div class="pin-dot" id="ad1"></div>
+      <div class="pin-dot" id="ad2"></div><div class="pin-dot" id="ad3"></div>
+    </div>
+    <div class="pin-pad-grid">
+      <button class="pin-key" onclick="adminPinPress('1')">1</button>
+      <button class="pin-key" onclick="adminPinPress('2')">2</button>
+      <button class="pin-key" onclick="adminPinPress('3')">3</button>
+      <button class="pin-key" onclick="adminPinPress('4')">4</button>
+      <button class="pin-key" onclick="adminPinPress('5')">5</button>
+      <button class="pin-key" onclick="adminPinPress('6')">6</button>
+      <button class="pin-key" onclick="adminPinPress('7')">7</button>
+      <button class="pin-key" onclick="adminPinPress('8')">8</button>
+      <button class="pin-key" onclick="adminPinPress('9')">9</button>
+      <button class="pin-key del" onclick="adminPinPress('DEL')">&#9003;</button>
+      <button class="pin-key" onclick="adminPinPress('0')">0</button>
+      <button class="pin-key enter" onclick="adminPinSubmit()">OK</button>
+    </div>
+    <div class="pin-error" id="pin-gate-error">Incorrect PIN. Please try again.</div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<!-- TOP NAV -->
+<nav id="top-nav" style="display:none">
+  <a class="nav-logo" href="#">
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+    Factory Maintenance Platform
+    <span class="nav-badge">Admin v4.0</span>
+  </a>
+  <a class="nav-back-link" href="?" target="_self">&#8592; Back to App</a>
+</nav>
+
+<!-- APP -->
+<div id="app" style="display:none">
+  <!-- SIDEBAR -->
+  <aside id="admin-sidebar">
+    <div class="sidebar-section-label">Management</div>
+    <div class="sidebar-item active" onclick="showSection('plants')" id="tab-plants">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect><polyline points="17 2 12 7 7 2"></polyline></svg>
+      Plants <span class="item-count" id="cnt-plants">0</span>
+    </div>
+    <div class="sidebar-item" onclick="showSection('areas')" id="tab-areas">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+      Areas <span class="item-count" id="cnt-areas">0</span>
+    </div>
+    <div class="sidebar-item" onclick="showSection('equipment')" id="tab-equipment">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+      Equipment <span class="item-count" id="cnt-equip">0</span>
+    </div>
+    <div class="sidebar-item" onclick="showSection('parameters')" id="tab-parameters">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+      Parameters <span class="item-count" id="cnt-params">0</span>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-section-label">Users</div>
+    <div class="sidebar-item" onclick="showSection('technicians')" id="tab-technicians">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+      Technicians <span class="item-count" id="cnt-techs">0</span>
+    </div>
+  </aside>
+
+  <!-- MAIN CONTENT -->
+  <main id="main-content">
+
+    <!-- PLANTS -->
+    <div class="section active" id="section-plants">
+      <div class="page-title-row">
+        <div><div class="page-title">Plants</div><div class="page-subtitle">Manage factory plants</div></div>
+        <button class="btn btn-primary" onclick="openPlantModal(null)">+ Add Plant</button>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Plant ID</th><th>Plant Name</th><th>Location</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="plants-tbody"><tr><td colspan="5" class="table-empty">Loading...</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <!-- AREAS -->
+    <div class="section" id="section-areas">
+      <div class="page-title-row">
+        <div><div class="page-title">Areas</div><div class="page-subtitle">Manage inspection areas</div></div>
+        <button class="btn btn-primary" onclick="openAreaModal(null)">+ Add Area</button>
+      </div>
+      <div class="toolbar">
+        <div class="search-box"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><input type="text" id="area-search" placeholder="Search areas..." oninput="renderAreas()"></div>
+        <select class="filter-sel" id="area-plant-filter" onchange="renderAreas()"><option value="">All Plants</option></select>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Area ID</th><th>Area Name</th><th>Plant</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="areas-tbody"><tr><td colspan="6" class="table-empty">Loading...</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <!-- EQUIPMENT -->
+    <div class="section" id="section-equipment">
+      <div class="page-title-row">
+        <div><div class="page-title">Equipment</div><div class="page-subtitle">Manage equipment and assets</div></div>
+        <button class="btn btn-primary" onclick="openEquipModal(null)">+ Add Equipment</button>
+      </div>
+      <div class="toolbar">
+        <div class="search-box"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><input type="text" id="equip-search" placeholder="Search equipment..." oninput="renderEquipment()"></div>
+        <select class="filter-sel" id="equip-plant-filter" onchange="filterEquipByPlant()"><option value="">All Plants</option></select>
+        <select class="filter-sel" id="equip-area-filter" onchange="renderEquipment()"><option value="">All Areas</option></select>
+        <select class="filter-sel" id="equip-cat-filter" onchange="renderEquipment()">
+          <option value="">All Categories</option>
+          <option>HV Switchgear</option><option>LV Switchgear</option><option>Transformer</option>
+          <option>Chiller</option><option>Cooling Tower</option><option>Pump</option>
+          <option>AHU</option><option>AHU Panel</option><option>FCU Panel</option>
+          <option>Solar PV</option><option>Hygrometer</option><option>CDA System</option><option>General</option>
+        </select>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Equip ID</th><th>Name</th><th>Category</th><th>Area</th><th>Cycle</th><th>Asset Tag</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="equip-tbody"><tr><td colspan="8" class="table-empty">Loading...</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <!-- PARAMETERS -->
+    <div class="section" id="section-parameters">
+      <div class="page-title-row">
+        <div><div class="page-title">Parameters / Templates</div><div class="page-subtitle">Manage inspection parameters per equipment</div></div>
+      </div>
+      <div style="background:white;border-radius:var(--radius-lg);border:1px solid var(--gray-200);padding:16px;margin-bottom:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:13px;font-weight:600;color:var(--gray-600)">Select Equipment:</label>
+        <select class="filter-sel" id="param-plant-filter" onchange="filterParamByPlant()" style="flex:1;min-width:130px"><option value="">All Plants</option></select>
+        <select class="filter-sel" id="param-area-filter" onchange="filterParamByArea()" style="flex:1;min-width:130px"><option value="">Select Area</option></select>
+        <select class="filter-sel" id="param-equip-filter" onchange="loadParams()" style="flex:1;min-width:180px"><option value="">Select Equipment</option></select>
+        <button class="btn btn-primary" onclick="openParamModal(null)" id="btn-add-param" disabled>+ Add Parameter</button>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>#</th><th>Parameter Name</th><th>Type</th><th>Unit</th><th>Min</th><th>Max</th><th>Required</th><th>Actions</th></tr></thead>
+        <tbody id="params-tbody"><tr><td colspan="8" class="table-empty">Select an equipment above to view its parameters</td></tr></tbody>
+      </table></div>
+    </div>
+
+    <!-- TECHNICIANS -->
+    <div class="section" id="section-technicians">
+      <div class="page-title-row">
+        <div><div class="page-title">Technicians</div><div class="page-subtitle">Manage user accounts and PINs</div></div>
+        <button class="btn btn-primary" onclick="openTechModal(null)">+ Add Technician</button>
+      </div>
+      <div class="toolbar">
+        <div class="search-box"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg><input type="text" id="tech-search" placeholder="Search technicians..." oninput="renderTechnicians()"></div>
+        <select class="filter-sel" id="tech-role-filter" onchange="renderTechnicians()"><option value="">All Roles</option><option value="Admin">Admin</option><option value="Tech">Tech</option></select>
+      </div>
+      <div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Tech ID</th><th>Name</th><th>Role</th><th>PIN</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="techs-tbody"><tr><td colspan="6" class="table-empty">Loading...</td></tr></tbody>
+      </table></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- MODALS -->
+<!-- Plant Modal -->
+<div class="modal-overlay" id="modal-plant">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="plant-modal-title">Add Plant</span><button class="modal-close" onclick="closeModal('modal-plant')">&#10005;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="plant-id">
+      <div class="form-group"><label class="form-label">Plant Name <span class="required">*</span></label><input type="text" class="form-input" id="plant-name" placeholder="e.g. Plant 1"></div>
+      <div class="form-group"><label class="form-label">Location</label><input type="text" class="form-input" id="plant-location" placeholder="e.g. Main Industrial Area"></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="plant-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-plant')">Cancel</button><button class="btn btn-primary" onclick="savePlant()">Save Plant</button></div>
+  </div>
+</div>
+
+<!-- Area Modal -->
+<div class="modal-overlay" id="modal-area">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="area-modal-title">Add Area</span><button class="modal-close" onclick="closeModal('modal-area')">&#10005;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="area-id">
+      <div class="form-group"><label class="form-label">Plant <span class="required">*</span></label><select class="form-select" id="area-plant-id"><option value="">Select Plant</option></select></div>
+      <div class="form-group"><label class="form-label">Area Name <span class="required">*</span></label><input type="text" class="form-input" id="area-name" placeholder="e.g. Consumer Room HT 33kV P1"></div>
+      <div class="form-group"><label class="form-label">Description</label><input type="text" class="form-input" id="area-description" placeholder="Optional description"></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="area-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-area')">Cancel</button><button class="btn btn-primary" onclick="saveArea()">Save Area</button></div>
+  </div>
+</div>
+
+<!-- Equipment Modal -->
+<div class="modal-overlay" id="modal-equip">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="equip-modal-title">Add Equipment</span><button class="modal-close" onclick="closeModal('modal-equip')">&#10005;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="equip-id">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Plant <span class="required">*</span></label><select class="form-select" id="equip-plant-id" onchange="populateEquipAreas()"><option value="">Select Plant</option></select></div>
+        <div class="form-group"><label class="form-label">Area <span class="required">*</span></label><select class="form-select" id="equip-area-id"><option value="">Select Area</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Equipment Name <span class="required">*</span></label><input type="text" class="form-input" id="equip-name" placeholder="e.g. Feeder 33kV Incomer 1"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Category</label>
+          <select class="form-select" id="equip-category">
+            <option value="">-- Select Category --</option>
+            <option>HV Switchgear</option><option>LV Switchgear</option><option>Transformer</option>
+            <option>Chiller</option><option>Cooling Tower</option><option>Pump</option>
+            <option>AHU</option><option>AHU Panel</option><option>FCU Panel</option>
+            <option>Solar PV</option><option>Hygrometer</option><option>CDA System</option><option>General</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Inspection Cycle <span class="required">*</span></label>
+          <select class="form-select" id="equip-cycle"><option>Daily</option><option>Weekly</option><option>Bi-Weekly</option><option>Semi-Monthly</option><option>Monthly</option><option>Quarterly</option><option>Semi-Annual</option><option>Annual</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">QR Code</label><input type="text" class="form-input" id="equip-qr" placeholder="Auto-generated if blank"></div>
+        <div class="form-group"><label class="form-label">Asset Tag</label><input type="text" class="form-input" id="equip-asset" placeholder="Auto-generated if blank"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="equip-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-equip')">Cancel</button><button class="btn btn-primary" onclick="saveEquipment()">Save Equipment</button></div>
+  </div>
+</div>
+
+<!-- Parameter Modal -->
+<div class="modal-overlay" id="modal-param">
+  <div class="modal modal-lg">
+    <div class="modal-header"><span class="modal-title" id="param-modal-title">Add Parameter</span><button class="modal-close" onclick="closeModal('modal-param')">&#10005;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="param-id">
+      <input type="hidden" id="param-equip-id">
+      <div class="form-group"><label class="form-label">Parameter Name <span class="required">*</span></label><input type="text" class="form-input" id="param-name" placeholder="e.g. Voltage L1"></div>
+      <div class="form-row col3">
+        <div class="form-group"><label class="form-label">Type <span class="required">*</span></label>
+          <select class="form-select" id="param-type" onchange="toggleParamFields()"><option value="numeric">Numeric</option><option value="yesno">Yes/No</option><option value="text">Text</option></select>
+        </div>
+        <div class="form-group"><label class="form-label">Unit</label><input type="text" class="form-input" id="param-unit" placeholder="e.g. kV, A, °C"></div>
+        <div class="form-group"><label class="form-label">Sort Order</label><input type="number" class="form-input" id="param-sort" value="1" min="1"></div>
+      </div>
+      <div id="param-numeric-fields">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Min Value</label><input type="number" class="form-input" id="param-min" placeholder="e.g. 31" step="any"></div>
+          <div class="form-group"><label class="form-label">Max Value</label><input type="number" class="form-input" id="param-max" placeholder="e.g. 35" step="any"></div>
+        </div>
+      </div>
+      <div id="param-options-field" style="display:none">
+        <div class="form-group"><label class="form-label">Options</label><input type="text" class="form-input" id="param-options" placeholder="Comma-separated options"><div class="form-hint">Leave blank for free text.</div></div>
+      </div>
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--gray-700)">
+          <input type="checkbox" id="param-required" checked style="width:16px;height:16px;accent-color:var(--blue-primary)"> Required field
+        </label>
+      </div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-param')">Cancel</button><button class="btn btn-primary" onclick="saveParam()">Save Parameter</button></div>
+  </div>
+</div>
+
+<!-- Technician Modal -->
+<div class="modal-overlay" id="modal-tech">
+  <div class="modal">
+    <div class="modal-header"><span class="modal-title" id="tech-modal-title">Add Technician</span><button class="modal-close" onclick="closeModal('modal-tech')">&#10005;</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="tech-id">
+      <div class="form-group"><label class="form-label">Full Name <span class="required">*</span></label><input type="text" class="form-input" id="tech-name" placeholder="e.g. Ahmad Rizal"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">PIN <span class="required">*</span></label><input type="text" class="form-input" id="tech-pin" placeholder="4-digit PIN" maxlength="4"><div class="form-hint">Must be 4 digits</div></div>
+        <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="tech-role"><option value="Tech">Tech</option><option value="Admin">Admin</option></select></div>
+      </div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-select" id="tech-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-tech')">Cancel</button><button class="btn btn-primary" onclick="saveTechnician()">Save Technician</button></div>
+  </div>
+</div>
+
+<!-- Confirm Delete -->
+<div class="modal-overlay" id="confirm-dialog">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-body" style="padding:28px 24px">
+      <div class="confirm-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path></svg></div>
+      <div class="confirm-title" id="confirm-title">Delete Item?</div>
+      <div class="confirm-msg" id="confirm-msg">This action cannot be undone.</div>
+    </div>
+    <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('confirm-dialog')">Cancel</button><button class="btn btn-danger" onclick="confirmAction()">Delete</button></div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// ADMIN PANEL JS — ES5 compatible for GAS sandbox
+// ============================================================
+
+var ADMIN = {
+  plants: [], areas: [], equipment: [], templates: [], technicians: [],
+  currentSection: 'plants'
+};
+var pendingDelete = null;
+var adminPin = '';
+
+// ── GAS CALL (ES5) ────────────────────────────────────────────
+function gasCall(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    var runner = google.script.run
+      .withSuccessHandler(resolve)
+      .withFailureHandler(reject);
+    runner[fn].apply(runner, args);
+  });
+}
+
+// ── UTILS ─────────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, type) {
+  type = type || 'success';
+  var t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(function() {
+    t.style.opacity = '0'; t.style.transition = 'opacity .3s';
+    setTimeout(function() { if(t.parentNode) t.parentNode.removeChild(t); }, 300);
+  }, 3000);
+}
+
+function setLoading(show) {
+  var el = document.getElementById('loading-overlay');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// Close modal on overlay click
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
+});
+
+// ── PIN GATE ──────────────────────────────────────────────────
+function adminPinPress(val) {
+  if (val === 'DEL') { adminPin = adminPin.slice(0, -1); }
+  else if (adminPin.length < 4) { adminPin += val; }
+  updateAdminDots();
+  if (adminPin.length === 4) { setTimeout(adminPinSubmit, 150); }
+}
+
+function updateAdminDots() {
+  for (var i = 0; i < 4; i++) {
+    var dot = document.getElementById('ad' + i);
+    if (i < adminPin.length) dot.classList.add('filled');
+    else dot.classList.remove('filled');
+  }
+}
+
+function adminPinSubmit() {
+  if (adminPin.length < 4) return;
+  setLoading(true);
+  gasCall('verifyAdminPin', adminPin).then(function(ok) {
+    setLoading(false);
+    if (ok) {
+      document.getElementById('pin-gate').classList.add('hidden');
+      document.getElementById('top-nav').style.display = 'flex';
+      document.getElementById('app').style.display = 'flex';
+      loadAllData();
+    } else {
+      adminPin = '';
+      updateAdminDots();
+      var errEl = document.getElementById('pin-gate-error');
+      errEl.style.display = 'block';
+      setTimeout(function() { errEl.style.display = 'none'; }, 2500);
+    }
+  }).catch(function(e) {
+    setLoading(false);
+    adminPin = '';
+    updateAdminDots();
+    showToast('Error: ' + e.message, 'error');
+  });
+}
+
+// ── LOAD ALL DATA ─────────────────────────────────────────────
+function loadAllData() {
+  setLoading(true);
+  Promise.all([
+    gasCall('getPlants'),
+    gasCall('getAreas'),
+    gasCall('getEquipment'),
+    gasCall('getAllTechnicians')
+  ]).then(function(results) {
+    ADMIN.plants      = results[0] || [];
+    ADMIN.areas       = results[1] || [];
+    ADMIN.equipment   = results[2] || [];
+    ADMIN.technicians = results[3] || [];
+    setLoading(false);
+    updateCounts();
+    populateAllDropdowns();
+    renderCurrentSection();
+  }).catch(function(e) {
+    setLoading(false);
+    showToast('Load error: ' + e.message, 'error');
+  });
+}
+
+function updateCounts() {
+  document.getElementById('cnt-plants').textContent = ADMIN.plants.length;
+  document.getElementById('cnt-areas').textContent  = ADMIN.areas.length;
+  document.getElementById('cnt-equip').textContent  = ADMIN.equipment.length;
+  document.getElementById('cnt-techs').textContent  = ADMIN.technicians.length;
+}
+
+// ── SECTION NAV ───────────────────────────────────────────────
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(function(s) { s.classList.remove('active'); });
+  document.querySelectorAll('.sidebar-item').forEach(function(s) { s.classList.remove('active'); });
+  document.getElementById('section-' + name).classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+  ADMIN.currentSection = name;
+  renderCurrentSection();
+}
+
+function renderCurrentSection() {
+  var s = ADMIN.currentSection;
+  if (s === 'plants')      renderPlants();
+  else if (s === 'areas')  renderAreas();
+  else if (s === 'equipment') renderEquipment();
+  else if (s === 'technicians') renderTechnicians();
+}
+
+// ── DROPDOWNS ─────────────────────────────────────────────────
+function populateAllDropdowns() {
+  var plantOpts = ADMIN.plants.map(function(p) {
+    return '<option value="' + p.plantID + '">' + escHtml(p.plantName) + '<\/option>';
+  }).join('');
+  var allPlantsOpt = '<option value="">All Plants<\/option>';
+  var selPlantsOpt = '<option value="">Select Plant<\/option>';
+
+  ['area-plant-filter','equip-plant-filter','param-plant-filter'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = allPlantsOpt + plantOpts;
+  });
+  ['area-plant-id','equip-plant-id'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.innerHTML = selPlantsOpt + plantOpts;
+  });
+
+  var areaOpts = ADMIN.areas.map(function(a) {
+    return '<option value="' + a.areaID + '">' + escHtml(a.areaName) + '<\/option>';
+  }).join('');
+  var eaFilter = document.getElementById('equip-area-filter');
+  if (eaFilter) eaFilter.innerHTML = '<option value="">All Areas<\/option>' + areaOpts;
+}
+
+function filterEquipByPlant() {
+  var pID = document.getElementById('equip-plant-filter').value;
+  var areas = pID ? ADMIN.areas.filter(function(a){ return a.plantID === pID; }) : ADMIN.areas;
+  var el = document.getElementById('equip-area-filter');
+  el.innerHTML = '<option value="">All Areas<\/option>' + areas.map(function(a){
+    return '<option value="' + a.areaID + '">' + escHtml(a.areaName) + '<\/option>';
+  }).join('');
+  renderEquipment();
+}
+
+function filterParamByPlant() {
+  var pID = document.getElementById('param-plant-filter').value;
+  var areas = pID ? ADMIN.areas.filter(function(a){ return a.plantID === pID; }) : ADMIN.areas;
+  var el = document.getElementById('param-area-filter');
+  el.innerHTML = '<option value="">Select Area<\/option>' + areas.map(function(a){
+    return '<option value="' + a.areaID + '">' + escHtml(a.areaName) + '<\/option>';
+  }).join('');
+  document.getElementById('param-equip-filter').innerHTML = '<option value="">Select Equipment<\/option>';
+  document.getElementById('btn-add-param').disabled = true;
+  document.getElementById('params-tbody').innerHTML = '<tr><td colspan="8" class="table-empty">Select an equipment<\/td><\/tr>';
+  document.getElementById('cnt-params').textContent = '0';
+}
+
+function filterParamByArea() {
+  var aID = document.getElementById('param-area-filter').value;
+  var equip = aID ? ADMIN.equipment.filter(function(e){ return e.areaID === aID; }) : [];
+  var el = document.getElementById('param-equip-filter');
+  el.innerHTML = '<option value="">Select Equipment<\/option>' + equip.map(function(e){
+    return '<option value="' + e.equipID + '">' + escHtml(e.equipmentName) + '<\/option>';
+  }).join('');
+  document.getElementById('btn-add-param').disabled = true;
+  document.getElementById('params-tbody').innerHTML = '<tr><td colspan="8" class="table-empty">Select an equipment<\/td><\/tr>';
+}
+
+function loadParams() {
+  var eqID = document.getElementById('param-equip-filter').value;
+  if (!eqID) {
+    document.getElementById('btn-add-param').disabled = true;
+    document.getElementById('params-tbody').innerHTML = '<tr><td colspan="8" class="table-empty">Select an equipment<\/td><\/tr>';
+    return;
+  }
+  document.getElementById('btn-add-param').disabled = false;
+  setLoading(true);
+  gasCall('getTemplates', eqID).then(function(templates) {
+    ADMIN.templates = templates || [];
+    document.getElementById('cnt-params').textContent = ADMIN.templates.length;
+    renderParams();
+    setLoading(false);
+  }).catch(function(e) {
+    setLoading(false);
+    showToast('Error: ' + e.message, 'error');
+  });
+}
+
+// ── PLANTS ────────────────────────────────────────────────────
+function renderPlants() {
+  var tbody = document.getElementById('plants-tbody');
+  if (!ADMIN.plants.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No plants found.<\/td><\/tr>';
+    return;
+  }
+  tbody.innerHTML = ADMIN.plants.map(function(p) {
+    return '<tr>' +
+      '<td><span class="id-chip">' + p.plantID + '<\/span><\/td>' +
+      '<td><strong>' + escHtml(p.plantName) + '<\/strong><\/td>' +
+      '<td>' + escHtml(p.location || '\u2013') + '<\/td>' +
+      '<td><span class="badge ' + (p.status === 'Active' ? 'badge-active' : 'badge-inactive') + '">' + p.status + '<\/span><\/td>' +
+      '<td><div class="actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="openPlantModal(\'' + p.plantID + '\')">&#9998; Edit<\/button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\'plant\',\'' + p.plantID + '\',\'' + escHtml(p.plantName) + '\')">&#128465;<\/button>' +
+      '<\/div><\/td>' +
+    '<\/tr>';
+  }).join('');
+}
+
+function openPlantModal(plantID) {
+  document.getElementById('plant-id').value = '';
+  document.getElementById('plant-name').value = '';
+  document.getElementById('plant-location').value = '';
+  document.getElementById('plant-status').value = 'Active';
+  document.getElementById('plant-modal-title').textContent = plantID ? 'Edit Plant' : 'Add Plant';
+  if (plantID) {
+    var p = null;
+    for (var i = 0; i < ADMIN.plants.length; i++) { if (ADMIN.plants[i].plantID === plantID) { p = ADMIN.plants[i]; break; } }
+    if (p) {
+      document.getElementById('plant-id').value = p.plantID;
+      document.getElementById('plant-name').value = p.plantName;
+      document.getElementById('plant-location').value = p.location || '';
+      document.getElementById('plant-status').value = p.status || 'Active';
+    }
+  }
+  openModal('modal-plant');
+}
+
+function savePlant() {
+  var name = document.getElementById('plant-name').value.trim();
+  if (!name) { showToast('Plant name is required', 'error'); return; }
+  setLoading(true);
+  gasCall('savePlant', {
+    plantID: document.getElementById('plant-id').value || null,
+    plantName: name,
+    location: document.getElementById('plant-location').value.trim(),
+    status: document.getElementById('plant-status').value
+  }).then(function(result) {
+    setLoading(false);
+    if (result && result.success) { closeModal('modal-plant'); showToast('Plant saved'); loadAllData(); }
+    else showToast((result && result.error) || 'Save failed', 'error');
+  }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+}
+
+// ── AREAS ─────────────────────────────────────────────────────
+function renderAreas() {
+  var search = (document.getElementById('area-search').value || '').toLowerCase();
+  var pFilter = document.getElementById('area-plant-filter').value;
+  var plantMap = {};
+  ADMIN.plants.forEach(function(p) { plantMap[p.plantID] = p.plantName; });
+  var rows = ADMIN.areas.filter(function(a) {
+    return (!search || a.areaName.toLowerCase().indexOf(search) >= 0) &&
+           (!pFilter || a.plantID === pFilter);
+  });
+  var tbody = document.getElementById('areas-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No areas found.<\/td><\/tr>'; return; }
+  tbody.innerHTML = rows.map(function(a) {
+    return '<tr>' +
+      '<td><span class="id-chip">' + a.areaID + '<\/span><\/td>' +
+      '<td><strong>' + escHtml(a.areaName) + '<\/strong><\/td>' +
+      '<td><span class="badge badge-blue">' + escHtml(plantMap[a.plantID] || a.plantID) + '<\/span><\/td>' +
+      '<td style="color:var(--gray-500)">' + escHtml(a.description || '\u2013') + '<\/td>' +
+      '<td><span class="badge ' + (a.status === 'Active' ? 'badge-active' : 'badge-inactive') + '">' + a.status + '<\/span><\/td>' +
+      '<td><div class="actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="openAreaModal(\'' + a.areaID + '\')">&#9998; Edit<\/button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\'area\',\'' + a.areaID + '\',\'' + escHtml(a.areaName) + '\')">&#128465;<\/button>' +
+      '<\/div><\/td>' +
+    '<\/tr>';
+  }).join('');
+}
+
+function openAreaModal(areaID) {
+  document.getElementById('area-id').value = '';
+  document.getElementById('area-name').value = '';
+  document.getElementById('area-description').value = '';
+  document.getElementById('area-status').value = 'Active';
+  document.getElementById('area-modal-title').textContent = areaID ? 'Edit Area' : 'Add Area';
+  var plantOpts = '<option value="">Select Plant<\/option>' + ADMIN.plants.map(function(p){
+    return '<option value="' + p.plantID + '">' + escHtml(p.plantName) + '<\/option>';
+  }).join('');
+  document.getElementById('area-plant-id').innerHTML = plantOpts;
+  if (areaID) {
+    var a = null;
+    for (var i = 0; i < ADMIN.areas.length; i++) { if (ADMIN.areas[i].areaID === areaID) { a = ADMIN.areas[i]; break; } }
+    if (a) {
+      document.getElementById('area-id').value = a.areaID;
+      document.getElementById('area-plant-id').value = a.plantID;
+      document.getElementById('area-name').value = a.areaName;
+      document.getElementById('area-description').value = a.description || '';
+      document.getElementById('area-status').value = a.status || 'Active';
+    }
+  }
+  openModal('modal-area');
+}
+
+function saveArea() {
+  var plantID = document.getElementById('area-plant-id').value;
+  var name = document.getElementById('area-name').value.trim();
+  if (!plantID) { showToast('Please select a plant', 'error'); return; }
+  if (!name) { showToast('Area name is required', 'error'); return; }
+  setLoading(true);
+  gasCall('saveArea', {
+    areaID: document.getElementById('area-id').value || null,
+    plantID: plantID, areaName: name,
+    description: document.getElementById('area-description').value.trim(),
+    status: document.getElementById('area-status').value
+  }).then(function(result) {
+    setLoading(false);
+    if (result && result.success) { closeModal('modal-area'); showToast('Area saved'); loadAllData(); }
+    else showToast((result && result.error) || 'Save failed', 'error');
+  }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+}
+
+// ── EQUIPMENT ─────────────────────────────────────────────────
+function renderEquipment() {
+  var search = (document.getElementById('equip-search').value || '').toLowerCase();
+  var aFilter = document.getElementById('equip-area-filter').value;
+  var catFilter = document.getElementById('equip-cat-filter').value;
+  var areaMap = {};
+  ADMIN.areas.forEach(function(a) { areaMap[a.areaID] = a.areaName; });
+  var rows = ADMIN.equipment.filter(function(e) {
+    return (!search || e.equipmentName.toLowerCase().indexOf(search) >= 0 || (e.assetTag||'').toLowerCase().indexOf(search) >= 0) &&
+           (!aFilter || e.areaID === aFilter) &&
+           (!catFilter || e.category === catFilter);
+  });
+  var tbody = document.getElementById('equip-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No equipment found.<\/td><\/tr>'; return; }
+  tbody.innerHTML = rows.map(function(e) {
+    return '<tr>' +
+      '<td><span class="id-chip">' + e.equipID + '<\/span><\/td>' +
+      '<td><strong>' + escHtml(e.equipmentName) + '<\/strong><\/td>' +
+      '<td>' + (e.category ? '<span class="badge badge-cat">' + escHtml(e.category) + '<\/span>' : '<span style="color:var(--gray-400)">\u2013<\/span>') + '<\/td>' +
+      '<td style="font-size:12px;color:var(--gray-500)">' + escHtml(areaMap[e.areaID] || e.areaID) + '<\/td>' +
+      '<td><span class="badge badge-blue">' + (e.inspectionCycle||'Daily') + '<\/span><\/td>' +
+      '<td style="font-family:monospace;font-size:12px">' + escHtml(e.assetTag||'\u2013') + '<\/td>' +
+      '<td><span class="badge ' + (e.status === 'Active' ? 'badge-active' : 'badge-inactive') + '">' + e.status + '<\/span><\/td>' +
+      '<td><div class="actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="openEquipModal(\'' + e.equipID + '\')">&#9998; Edit<\/button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="goToParams(\'' + e.equipID + '\')">&#9881; Params<\/button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\'equip\',\'' + e.equipID + '\',\'' + escHtml(e.equipmentName) + '\')">&#128465;<\/button>' +
+      '<\/div><\/td>' +
+    '<\/tr>';
+  }).join('');
+}
+
+function openEquipModal(equipID) {
+  document.getElementById('equip-id').value = '';
+  document.getElementById('equip-name').value = '';
+  document.getElementById('equip-qr').value = '';
+  document.getElementById('equip-asset').value = '';
+  document.getElementById('equip-category').value = '';
+  document.getElementById('equip-cycle').value = 'Daily';
+  document.getElementById('equip-status').value = 'Active';
+  document.getElementById('equip-modal-title').textContent = equipID ? 'Edit Equipment' : 'Add Equipment';
+  var plantOpts = '<option value="">Select Plant<\/option>' + ADMIN.plants.map(function(p){
+    return '<option value="' + p.plantID + '">' + escHtml(p.plantName) + '<\/option>';
+  }).join('');
+  document.getElementById('equip-plant-id').innerHTML = plantOpts;
+  document.getElementById('equip-area-id').innerHTML = '<option value="">Select Area<\/option>';
+  if (equipID) {
+    var eq = null;
+    for (var i = 0; i < ADMIN.equipment.length; i++) { if (ADMIN.equipment[i].equipID === equipID) { eq = ADMIN.equipment[i]; break; } }
+    if (eq) {
+      document.getElementById('equip-id').value = eq.equipID;
+      document.getElementById('equip-name').value = eq.equipmentName;
+      document.getElementById('equip-qr').value = eq.qrCode || '';
+      document.getElementById('equip-asset').value = eq.assetTag || '';
+      document.getElementById('equip-category').value = eq.category || '';
+      document.getElementById('equip-cycle').value = eq.inspectionCycle || 'Daily';
+      document.getElementById('equip-status').value = eq.status || 'Active';
+      var area = null;
+      for (var j = 0; j < ADMIN.areas.length; j++) { if (ADMIN.areas[j].areaID === eq.areaID) { area = ADMIN.areas[j]; break; } }
+      if (area) {
+        document.getElementById('equip-plant-id').value = area.plantID;
+        populateEquipAreas();
+        document.getElementById('equip-area-id').value = eq.areaID;
+      }
+    }
+  }
+  openModal('modal-equip');
+}
+
+function populateEquipAreas() {
+  var pID = document.getElementById('equip-plant-id').value;
+  var areas = pID ? ADMIN.areas.filter(function(a){ return a.plantID === pID; }) : ADMIN.areas;
+  document.getElementById('equip-area-id').innerHTML = '<option value="">Select Area<\/option>' + areas.map(function(a){
+    return '<option value="' + a.areaID + '">' + escHtml(a.areaName) + '<\/option>';
+  }).join('');
+}
+
+function saveEquipment() {
+  var areaID = document.getElementById('equip-area-id').value;
+  var name = document.getElementById('equip-name').value.trim();
+  if (!areaID) { showToast('Please select an area', 'error'); return; }
+  if (!name) { showToast('Equipment name is required', 'error'); return; }
+  setLoading(true);
+  gasCall('saveEquipment', {
+    equipID: document.getElementById('equip-id').value || null,
+    areaID: areaID, equipmentName: name,
+    qrCode: document.getElementById('equip-qr').value.trim(),
+    assetTag: document.getElementById('equip-asset').value.trim(),
+    category: document.getElementById('equip-category').value,
+    inspectionCycle: document.getElementById('equip-cycle').value,
+    status: document.getElementById('equip-status').value
+  }).then(function(result) {
+    setLoading(false);
+    if (result && result.success) { closeModal('modal-equip'); showToast('Equipment saved'); loadAllData(); }
+    else showToast((result && result.error) || 'Save failed', 'error');
+  }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+}
+
+function goToParams(equipID) {
+  var eq = null;
+  for (var i = 0; i < ADMIN.equipment.length; i++) { if (ADMIN.equipment[i].equipID === equipID) { eq = ADMIN.equipment[i]; break; } }
+  if (!eq) return;
+  var area = null;
+  for (var j = 0; j < ADMIN.areas.length; j++) { if (ADMIN.areas[j].areaID === eq.areaID) { area = ADMIN.areas[j]; break; } }
+  showSection('parameters');
+  if (area) {
+    document.getElementById('param-plant-filter').value = area.plantID;
+    filterParamByPlant();
+    setTimeout(function() {
+      document.getElementById('param-area-filter').value = area.areaID;
+      filterParamByArea();
+      setTimeout(function() {
+        document.getElementById('param-equip-filter').value = equipID;
+        loadParams();
+      }, 50);
+    }, 50);
+  }
+}
+
+// ── PARAMETERS ────────────────────────────────────────────────
+function renderParams() {
+  var tbody = document.getElementById('params-tbody');
+  if (!ADMIN.templates.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No parameters. Click "Add Parameter".<\/td><\/tr>';
+    return;
+  }
+  tbody.innerHTML = ADMIN.templates.map(function(t, i) {
+    return '<tr>' +
+      '<td>' + (t.sortOrder || i+1) + '<\/td>' +
+      '<td><strong>' + escHtml(t.parameterName) + '<\/strong><\/td>' +
+      '<td><span class="type-chip type-' + (t.type||'numeric') + '">' + (t.type||'numeric') + '<\/span><\/td>' +
+      '<td>' + escHtml(t.unit||'\u2013') + '<\/td>' +
+      '<td>' + (t.minValue !== '' && t.minValue !== undefined && t.minValue !== null ? t.minValue : '\u2013') + '<\/td>' +
+      '<td>' + (t.maxValue !== '' && t.maxValue !== undefined && t.maxValue !== null ? t.maxValue : '\u2013') + '<\/td>' +
+      '<td>' + (t.required ? '\u2713' : '\u2013') + '<\/td>' +
+      '<td><div class="actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="openParamModal(\'' + t.templateID + '\')">&#9998; Edit<\/button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\'param\',\'' + t.templateID + '\',\'' + escHtml(t.parameterName) + '\')">&#128465;<\/button>' +
+      '<\/div><\/td>' +
+    '<\/tr>';
+  }).join('');
+}
+
+function openParamModal(templateID) {
+  document.getElementById('param-id').value = '';
+  document.getElementById('param-name').value = '';
+  document.getElementById('param-type').value = 'numeric';
+  document.getElementById('param-unit').value = '';
+  document.getElementById('param-sort').value = ADMIN.templates.length + 1;
+  document.getElementById('param-min').value = '';
+  document.getElementById('param-max').value = '';
+  document.getElementById('param-options').value = '';
+  document.getElementById('param-required').checked = true;
+  document.getElementById('param-modal-title').textContent = templateID ? 'Edit Parameter' : 'Add Parameter';
+  document.getElementById('param-equip-id').value = document.getElementById('param-equip-filter').value;
+  toggleParamFields();
+  if (templateID) {
+    var t = null;
+    for (var i = 0; i < ADMIN.templates.length; i++) { if (ADMIN.templates[i].templateID === templateID) { t = ADMIN.templates[i]; break; } }
+    if (t) {
+      document.getElementById('param-id').value = t.templateID;
+      document.getElementById('param-name').value = t.parameterName;
+      document.getElementById('param-type').value = t.type || 'numeric';
+      document.getElementById('param-unit').value = t.unit || '';
+      document.getElementById('param-sort').value = t.sortOrder || 1;
+      document.getElementById('param-min').value = t.minValue !== undefined ? t.minValue : '';
+      document.getElementById('param-max').value = t.maxValue !== undefined ? t.maxValue : '';
+      document.getElementById('param-options').value = t.options || '';
+      document.getElementById('param-required').checked = t.required !== false;
+      toggleParamFields();
+    }
+  }
+  openModal('modal-param');
+}
+
+function toggleParamFields() {
+  var type = document.getElementById('param-type').value;
+  document.getElementById('param-numeric-fields').style.display = type === 'numeric' ? '' : 'none';
+  document.getElementById('param-options-field').style.display = type === 'text' ? '' : 'none';
+}
+
+function saveParam() {
+  var name = document.getElementById('param-name').value.trim();
+  var equipID = document.getElementById('param-equip-id').value;
+  if (!name) { showToast('Parameter name is required', 'error'); return; }
+  if (!equipID) { showToast('No equipment selected', 'error'); return; }
+  setLoading(true);
+  gasCall('saveTemplate', {
+    templateID: document.getElementById('param-id').value || null,
+    equipID: equipID, parameterName: name,
+    type: document.getElementById('param-type').value,
+    unit: document.getElementById('param-unit').value.trim(),
+    minValue: document.getElementById('param-min').value,
+    maxValue: document.getElementById('param-max').value,
+    sortOrder: parseInt(document.getElementById('param-sort').value) || 1,
+    options: document.getElementById('param-options').value.trim(),
+    required: document.getElementById('param-required').checked
+  }).then(function(result) {
+    setLoading(false);
+    if (result && result.success) {
+      closeModal('modal-param');
+      showToast('Parameter saved');
+      return gasCall('getTemplates', equipID);
+    } else {
+      showToast((result && result.error) || 'Save failed', 'error');
+      return null;
+    }
+  }).then(function(templates) {
+    if (templates) {
+      ADMIN.templates = templates || [];
+      document.getElementById('cnt-params').textContent = ADMIN.templates.length;
+      renderParams();
+    }
+  }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+}
+
+// ── TECHNICIANS ───────────────────────────────────────────────
+function renderTechnicians() {
+  var search = (document.getElementById('tech-search').value || '').toLowerCase();
+  var rFilter = document.getElementById('tech-role-filter').value;
+  var rows = ADMIN.technicians.filter(function(t) {
+    return (!search || t.name.toLowerCase().indexOf(search) >= 0) &&
+           (!rFilter || t.role === rFilter);
+  });
+  var tbody = document.getElementById('techs-tbody');
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No technicians found.<\/td><\/tr>'; return; }
+  tbody.innerHTML = rows.map(function(t) {
+    return '<tr>' +
+      '<td><span class="id-chip">' + t.techID + '<\/span><\/td>' +
+      '<td><strong>' + escHtml(t.name) + '<\/strong><\/td>' +
+      '<td><span class="badge ' + (t.role === 'Admin' ? 'badge-admin' : 'badge-tech') + '">' + t.role + '<\/span><\/td>' +
+      '<td><span style="letter-spacing:3px;color:var(--gray-400)">\u2022\u2022\u2022\u2022<\/span><\/td>' +
+      '<td><span class="badge ' + (t.status === 'Active' ? 'badge-active' : 'badge-inactive') + '">' + t.status + '<\/span><\/td>' +
+      '<td><div class="actions">' +
+        '<button class="btn btn-outline btn-sm" onclick="openTechModal(\'' + t.techID + '\')">&#9998; Edit<\/button>' +
+        '<button class="btn btn-danger btn-sm" onclick="confirmDelete(\'tech\',\'' + t.techID + '\',\'' + escHtml(t.name) + '\')">&#128465;<\/button>' +
+      '<\/div><\/td>' +
+    '<\/tr>';
+  }).join('');
+}
+
+function openTechModal(techID) {
+  document.getElementById('tech-id').value = '';
+  document.getElementById('tech-name').value = '';
+  document.getElementById('tech-pin').value = '';
+  document.getElementById('tech-role').value = 'Tech';
+  document.getElementById('tech-status').value = 'Active';
+  document.getElementById('tech-modal-title').textContent = techID ? 'Edit Technician' : 'Add Technician';
+  if (techID) {
+    var t = null;
+    for (var i = 0; i < ADMIN.technicians.length; i++) { if (ADMIN.technicians[i].techID === techID) { t = ADMIN.technicians[i]; break; } }
+    if (t) {
+      document.getElementById('tech-id').value = t.techID;
+      document.getElementById('tech-name').value = t.name;
+      document.getElementById('tech-pin').value = t.pin;
+      document.getElementById('tech-role').value = t.role || 'Tech';
+      document.getElementById('tech-status').value = t.status || 'Active';
+    }
+  }
+  openModal('modal-tech');
+}
+
+function saveTechnician() {
+  var name = document.getElementById('tech-name').value.trim();
+  var pin = document.getElementById('tech-pin').value.trim();
+  if (!name) { showToast('Name is required', 'error'); return; }
+  if (!/^\d{4}$/.test(pin)) { showToast('PIN must be exactly 4 digits', 'error'); return; }
+  setLoading(true);
+  gasCall('saveTechnician', {
+    techID: document.getElementById('tech-id').value || null,
+    name: name, pin: pin,
+    role: document.getElementById('tech-role').value,
+    status: document.getElementById('tech-status').value
+  }).then(function(result) {
+    setLoading(false);
+    if (result && result.success) { closeModal('modal-tech'); showToast('Technician saved'); loadAllData(); }
+    else showToast((result && result.error) || 'Save failed', 'error');
+  }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+}
+
+// ── DELETE CONFIRM ─────────────────────────────────────────────
+function confirmDelete(type, id, name) {
+  pendingDelete = { type: type, id: id };
+  document.getElementById('confirm-title').textContent = 'Delete ' + type.charAt(0).toUpperCase() + type.slice(1) + '?';
+  document.getElementById('confirm-msg').textContent = '"' + name + '" will be permanently deleted. This cannot be undone.';
+  openModal('confirm-dialog');
+}
+
+function confirmAction() {
+  if (!pendingDelete) return;
+  var type = pendingDelete.type;
+  var id = pendingDelete.id;
+  pendingDelete = null;
+  closeModal('confirm-dialog');
+  setLoading(true);
+
+  var fn;
+  if (type === 'plant')  fn = gasCall('deletePlant', id);
+  else if (type === 'area')   fn = gasCall('deleteArea', id);
+  else if (type === 'equip')  fn = gasCall('deleteEquipment', id);
+  else if (type === 'tech')   fn = gasCall('deleteTechnician', id);
+  else if (type === 'param') {
+    fn = gasCall('deleteTemplate', id).then(function(result) {
+      if (result && result.success) {
+        showToast('Parameter deleted');
+        var eqID = document.getElementById('param-equip-filter').value;
+        return gasCall('getTemplates', eqID).then(function(templates) {
+          ADMIN.templates = templates || [];
+          document.getElementById('cnt-params').textContent = ADMIN.templates.length;
+          renderParams();
+          setLoading(false);
+        });
+      } else {
+        showToast((result && result.error) || 'Delete failed', 'error');
+        setLoading(false);
+      }
+    });
+    fn.catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+    return;
+  }
+
+  if (fn) {
+    fn.then(function(result) {
+      setLoading(false);
+      if (result && result.success) { showToast('Deleted successfully'); loadAllData(); }
+      else showToast((result && result.error) || 'Delete failed', 'error');
+    }).catch(function(e) { setLoading(false); showToast(e.message, 'error'); });
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────
+// PIN gate is visible by default. Loading overlay starts hidden.
+// No init needed - PIN gate shows immediately on page load.
+</script>
+</body>
+</html>
