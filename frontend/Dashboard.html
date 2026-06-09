@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inspection Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --blue-900: #1e3a5c; --blue-800: #1a56db; --blue-700: #1e429f;
+      --blue-100: #e8f0fe; --blue-50: #f0f4ff;
+      --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb;
+      --gray-300: #d1d5db; --gray-400: #9ca3af; --gray-500: #6b7280;
+      --gray-700: #374151; --gray-800: #1f2937;
+      --green-600: #16a34a; --green-100: #dcfce7; --green-50: #f0fdf4;
+      --red-600: #dc2626; --red-100: #fee2e2; --red-50: #fff1f2;
+      --amber-600: #b45309; --amber-100: #fef3c7;
+      --partial-bg: #fef9c3;
+      --radius: 8px; --shadow: 0 2px 8px rgba(0,0,0,.08);
+      --shadow-lg: 0 4px 16px rgba(0,0,0,.12);
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--gray-50); color: var(--gray-800); font-size: 14px; min-height: 100vh; }
+
+    /* ── TOP BAR ── */
+    #topbar {
+      background: var(--blue-900); color: white;
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 24px; height: 56px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.25);
+      position: sticky; top: 0; z-index: 200;
+    }
+    .tb-back { color: rgba(255,255,255,.8); text-decoration: none; font-size: 13px; display: flex; align-items: center; gap: 5px; padding: 6px 10px; border-radius: 6px; cursor: pointer; background: none; border: none; }
+    .tb-back:hover { background: rgba(255,255,255,.12); color: white; }
+    .tb-title { flex: 1; font-weight: 700; font-size: 16px; }
+    .tb-year { font-size: 13px; color: rgba(255,255,255,.7); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all .2s; white-space: nowrap; }
+    .btn-primary { background: var(--blue-800); color: white; } .btn-primary:hover { background: var(--blue-700); }
+    .btn-active { background: white; color: var(--blue-900); }
+    .btn-outline { background: transparent; color: white; border: 1.5px solid rgba(255,255,255,.4); } .btn-outline:hover { background: rgba(255,255,255,.12); }
+    .btn-green { background: #16a34a; color: white; } .btn-green:hover { background: #15803d; }
+
+    /* ── CONTROLS ── */
+    #controls {
+      background: white; border-bottom: 1px solid var(--gray-200);
+      padding: 12px 24px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .year-group { display: flex; gap: 0; border-radius: var(--radius); overflow: hidden; border: 1.5px solid var(--gray-200); }
+    .yr-btn { padding: 7px 18px; border: none; background: white; font-size: 13px; font-weight: 600; cursor: pointer; color: var(--gray-600); border-right: 1px solid var(--gray-200); transition: all .2s; }
+    .yr-btn:last-child { border-right: none; }
+    .yr-btn.active { background: var(--blue-800); color: white; }
+    .yr-btn:hover:not(.active) { background: var(--blue-50); color: var(--blue-800); }
+    .ctrl-sep { width: 1px; height: 28px; background: var(--gray-200); }
+    .cycle-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .cyc-btn { padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--gray-200); background: white; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--gray-500); transition: all .2s; }
+    .cyc-btn:hover:not(.active) { border-color: var(--blue-800); color: var(--blue-800); }
+    .cyc-btn.active { background: var(--blue-800); color: white; border-color: var(--blue-800); }
+
+    /* ── LEGEND ── */
+    #legend {
+      background: white; padding: 8px 24px; border-bottom: 1px solid var(--gray-100);
+      display: flex; gap: 20px; align-items: center; font-size: 12px; color: var(--gray-500); flex-wrap: wrap;
+    }
+    .leg { display: flex; align-items: center; gap: 6px; }
+    .leg-check { color: var(--green-600); font-weight: 700; font-size: 15px; }
+    .leg-cross  { color: var(--red-600);   font-weight: 700; font-size: 15px; }
+    .leg-dash   { color: var(--gray-400);  font-weight: 700; font-size: 15px; }
+
+    /* ── MAIN ── */
+    #main { padding: 20px 24px 80px; }
+    .spinner-wrap { text-align: center; padding: 60px; color: var(--gray-400); }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--gray-200); border-top-color: var(--blue-800); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── PAGE HEADER ── */
+    .page-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .page-hdr-title { font-size: 22px; font-weight: 700; color: var(--gray-800); }
+
+    /* ── SECTION BLOCK ── */
+    .section-block { background: white; border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; margin-bottom: 24px; border: 1px solid var(--gray-200); }
+    .section-title { background: var(--blue-50); border-bottom: 2px solid var(--blue-100); padding: 12px 18px; font-size: 14px; font-weight: 700; color: var(--blue-800); display: flex; align-items: center; gap: 8px; }
+    .section-title svg { width: 18px; height: 18px; }
+
+    /* ── DASHBOARD TABLE ── */
+    .dash-wrap { overflow-x: auto; }
+    table.dash { width: 100%; border-collapse: collapse; min-width: 1000px; }
+
+    /* Header */
+    .dash thead th {
+      background: var(--blue-900); color: white;
+      padding: 10px 8px; text-align: center;
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+      white-space: nowrap; border-right: 1px solid rgba(255,255,255,.08);
+      position: sticky; top: 56px; z-index: 10;
+    }
+    .dash thead th.col-loc { text-align: left; min-width: 240px; padding-left: 14px; }
+    .dash thead th.col-no  { width: 44px; }
+    .dash thead th.col-typ { width: 90px; }
+    .dash thead th.col-cyc { width: 80px; }
+    .dash thead th.col-mon { min-width: 88px; }
+    .dash thead th.cur-month { background: var(--amber-600); }
+
+    /* Phase header */
+    .row-phase td {
+      background: var(--blue-800); color: white;
+      font-weight: 700; font-size: 12px; text-align: center;
+      padding: 6px 14px; letter-spacing: .5px; text-transform: uppercase;
+    }
+
+    /* Data rows */
+    .dash tbody tr.data-row { border-bottom: 1px solid var(--gray-100); }
+    .dash tbody tr.data-row:hover td { background: var(--blue-50); }
+    .dash td { padding: 0; vertical-align: middle; border-right: 1px solid var(--gray-100); }
+    .dash td.td-no  { text-align: center; padding: 12px 6px; color: var(--gray-400); font-size: 12px; }
+    .dash td.td-loc { padding: 12px 14px; font-weight: 600; color: var(--gray-800); }
+    .dash td.td-typ { text-align: center; padding: 8px; }
+    .dash td.td-cyc { text-align: center; padding: 8px; }
+    .dash td.td-mon { cursor: pointer; vertical-align: middle; }
+    .dash td.td-mon:hover .cell-inner { filter: brightness(.96); }
+
+    /* Type & Cycle badges */
+    .badge-type { display: inline-block; background: var(--blue-100); color: var(--blue-800); font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
+    .badge-cycle { display: inline-block; color: var(--blue-800); font-size: 12px; font-weight: 600; }
+
+    /* Month cells */
+    .cell-inner { padding: 8px 6px; text-align: center; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+    .cell-inner.s-completed { background: var(--green-50); }
+    .cell-inner.s-partial   { background: #fffbeb; }
+    .cell-inner.s-none      { background: var(--red-50); }
+    .cell-inner.s-upcoming  { background: white; }
+    .cell-icon { font-size: 16px; font-weight: 700; line-height: 1; }
+    .cell-icon.ok  { color: var(--green-600); }
+    .cell-icon.bad { color: var(--red-600); }
+    .cell-icon.up  { color: var(--gray-300); }
+    .cell-score { font-size: 10px; font-weight: 600; }
+    .cell-score.ok  { color: var(--green-600); }
+    .cell-score.bad { color: var(--red-600); }
+    .cell-score.up  { color: var(--gray-300); }
+    .cell-missed { font-size: 9px; color: var(--red-600); line-height: 1.3; max-width: 80px; }
+
+    /* Area link */
+    .area-link { cursor: pointer; color: var(--gray-800); border-bottom: 1px dashed var(--gray-300); transition: all .2s; }
+    .area-link:hover { color: var(--blue-800); border-bottom-color: var(--blue-800); }
+
+    /* Repeat header at bottom */
+    tfoot.sticky-foot th {
+      background: var(--blue-900); color: white;
+      padding: 8px 6px; font-size: 10px; font-weight: 700;
+      text-align: center; text-transform: uppercase; letter-spacing: .4px;
+      border-top: 2px solid var(--blue-800);
+      position: sticky; bottom: 0;
+    }
+    tfoot.sticky-foot th.col-loc { text-align: left; padding-left: 14px; }
+    tfoot.sticky-foot th.cur-month { background: var(--amber-600); }
+
+    /* ── MODAL ── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300; display: none; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; animation: fadeIn .15s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .modal { background: white; border-radius: 14px; width: 100%; max-width: 580px; max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow-lg); animation: slideUp .2s; }
+    @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .modal-hdr { background: var(--blue-900); color: white; padding: 18px 22px; border-radius: 14px 14px 0 0; display: flex; align-items: flex-start; justify-content: space-between; }
+    .modal-hdr-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+    .modal-hdr-sub { font-size: 13px; color: rgba(255,255,255,.75); }
+    .modal-close { background: none; border: none; color: white; font-size: 22px; cursor: pointer; opacity: .7; line-height: 1; padding: 0; }
+    .modal-close:hover { opacity: 1; }
+    .modal-body { padding: 20px 22px; }
+
+    /* Modal stats */
+    .modal-pill { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.2); border-radius: 20px; padding: 4px 12px; font-size: 13px; font-weight: 600; margin-top: 6px; }
+    .modal-stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 18px; }
+    .ms { background: var(--gray-50); border-radius: var(--radius); border: 1px solid var(--gray-200); padding: 12px; text-align: center; }
+    .ms-val { font-size: 22px; font-weight: 700; }
+    .ms-lbl { font-size: 11px; color: var(--gray-500); margin-top: 2px; font-weight: 600; }
+
+    /* Day grid */
+    .day-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+    .day-hdr { text-align: center; font-size: 10px; font-weight: 700; color: var(--gray-400); padding: 4px 0; text-transform: uppercase; }
+    .day-cell { border-radius: 8px; padding: 8px 4px 6px; text-align: center; border: 1.5px solid var(--gray-200); transition: transform .1s; }
+    .day-cell:hover { transform: scale(1.05); }
+    .day-cell .dc-num { font-size: 13px; font-weight: 700; color: var(--gray-700); }
+    .day-cell .dc-icon { font-size: 16px; margin-top: 4px; display: block; }
+    .day-cell.done    { background: var(--green-100); border-color: #86efac; }
+    .day-cell.done    .dc-num  { color: var(--green-600); }
+    .day-cell.missed  { background: var(--red-100);   border-color: #fca5a5; }
+    .day-cell.missed  .dc-num  { color: var(--red-600); }
+    .day-cell.future  { background: var(--gray-50); border-color: var(--gray-100); }
+    .day-cell.future  .dc-num  { color: var(--gray-400); }
+    .day-cell.skip    { background: white; border-color: var(--gray-100); }
+    .day-cell.skip    .dc-num  { color: var(--gray-300); }
+    .dc-tech { font-size: 9px; color: var(--green-600); font-weight: 600; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* PRINT */
+    @media print {
+      #topbar, #controls, #legend, .no-print { display: none !important; }
+      body { background: white; font-size: 10px; }
+      #main { padding: 0; }
+      .section-block { box-shadow: none; border-radius: 0; page-break-inside: avoid; border: 1px solid #ccc; margin-bottom: 8px; }
+      .dash thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 9px; padding: 5px 4px; top: 0; }
+      .dash td { font-size: 9px; }
+      .cell-inner { min-height: 28px; padding: 4px 2px; }
+      .badge-type, .badge-cycle { font-size: 9px; }
+      .section-title { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .row-phase td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .cell-inner.s-completed, .cell-inner.s-none, .cell-inner.s-partial { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      @page { size: A3 landscape; margin: 8mm; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <button class="tb-back" onclick="gasCall('getWebAppUrl').then(function(u){ window.open(u,'_self'); });">&#8592; Back</button>
+  <span class="tb-title">Factory Inspection Dashboard</span>
+  <div class="no-print" style="display:flex;gap:8px">
+    <button class="btn btn-green" id="excel-btn" onclick="exportCSV()" style="display:none">&#8595; Export Excel</button>
+    <button class="btn btn-outline" onclick="window.print()">&#128438; Print</button>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div id="controls">
+  <div class="year-group" id="year-btns"></div>
+  <div class="ctrl-sep"></div>
+  <div class="cycle-group" id="cycle-btns"></div>
+</div>
+
+<!-- LEGEND -->
+<div id="legend">
+  <span style="font-weight:600;color:var(--gray-700)">Legend:</span>
+  <span class="leg"><span class="leg-check">&#10003;</span> Completed</span>
+  <span class="leg"><span class="leg-cross">&#10007;</span> Not completed</span>
+  <span class="leg"><span class="leg-dash">&#8212;</span> Upcoming / not executed</span>
+  <span style="color:var(--gray-400);font-size:12px">&#128161; Click any cell for day-by-day details</span>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div class="spinner-wrap" id="init-spinner">
+    <div class="spinner"></div>
+    <p style="margin-top:12px;color:var(--gray-500)">Loading dashboard...</p>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div class="modal-overlay" id="detail-modal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div>
+        <div class="modal-hdr-title" id="m-title">Loading...</div>
+        <div class="modal-hdr-sub" id="m-sub"></div>
+        <div class="modal-pill" id="m-pill"></div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">&#10005;</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-stats" id="m-stats"></div>
+      <div class="day-grid" id="m-grid"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var DB = {
+  year: new Date().getFullYear(),
+  cycleFilter: 'All',
+  data: null,
+  MONTHS:      ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'],
+  MONTHS_FULL: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+  CYCLE_ORDER: ['Daily','Weekly','Bi-Weekly','Semi-Monthly','Monthly','Quarterly','Semi-Annual','Annual'],
+  CYCLE_SHORT: {'Daily':'Daily','Weekly':'Weekly','Bi-Weekly':'Bi-Weekly','Semi-Monthly':'Semi-Monthly','Monthly':'Monthly','Quarterly':'Quarterly','Semi-Annual':'Semi-Annual','Annual':'Annual'}
+};
+
+function gasCall(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn].apply(google.script.run, args);
+  });
+}
+function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// INIT
+window.addEventListener('load', function() {
+  if (typeof google === 'undefined' || !google.script) {
+    document.getElementById('init-spinner').innerHTML = '<p style="color:red;padding:20px">GAS API unavailable.</p>';
+    return;
+  }
+  buildControls();
+  loadData();
+});
+
+function buildControls() {
+  var cur = new Date().getFullYear();
+  var yrHtml = '';
+  for (var y = cur - 1; y <= cur + 1; y++) {
+    yrHtml += '<button class="yr-btn' + (y === DB.year ? ' active' : '') + '" onclick="setYear(' + y + ')">' + y + '</button>';
+  }
+  document.getElementById('year-btns').innerHTML = yrHtml;
+
+  var cycles = ['All'].concat(DB.CYCLE_ORDER);
+  var cyHtml = cycles.map(function(c) {
+    return '<button class="cyc-btn' + (c === DB.cycleFilter ? ' active' : '') + '" onclick="setCycle(' + "'" + c + "'" + ')">' + c + '</button>';
+  }).join('');
+  document.getElementById('cycle-btns').innerHTML = cyHtml;
+}
+
+function setYear(y) { DB.year = y; buildControls(); loadData(); }
+function setCycle(c) { DB.cycleFilter = c; buildControls(); renderDashboard(); }
+
+function loadData() {
+  document.getElementById('main').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div><p style="margin-top:12px;color:var(--gray-500)">Loading ' + DB.year + '...</p></div>';
+  document.getElementById('excel-btn').style.display = 'none';
+  gasCall('getDashboardReport', DB.year).then(function(data) {
+    if (!data || data.error) {
+      document.getElementById('main').innerHTML = '<p style="color:red;padding:20px">Error: ' + esc((data && data.error) || 'Unknown') + '</p>';
+      return;
+    }
+    DB.data = data;
+    renderDashboard();
+    document.getElementById('excel-btn').style.display = 'flex';
+  }).catch(function(e) {
+    document.getElementById('main').innerHTML = '<p style="color:red;padding:20px">Error: ' + esc(e.message) + '</p>';
+  });
+}
+
+function renderDashboard() {
+  if (!DB.data) return;
+  var curMonth = new Date().getMonth();
+  var curYear  = new Date().getFullYear();
+  var areas = DB.data.areas;
+  var filtered = DB.cycleFilter === 'All' ? areas : areas.filter(function(a){ return a.cycle === DB.cycleFilter; });
+
+  // Group by cycle → plant
+  var cycleGroups = {};
+  filtered.forEach(function(area) {
+    if (!cycleGroups[area.cycle]) cycleGroups[area.cycle] = {};
+    if (!cycleGroups[area.cycle][area.plantName]) cycleGroups[area.cycle][area.plantName] = [];
+    cycleGroups[area.cycle][area.plantName].push(area);
+  });
+  var cycles = DB.CYCLE_ORDER.filter(function(c){ return cycleGroups[c]; });
+
+  var html = '<div class="page-hdr">' +
+    '<div class="page-hdr-title">Factory Inspection Checklist &mdash; ' + DB.year + '</div>' +
+  '</div>';
+
+  cycles.forEach(function(cycle) {
+    var cyclePlants = cycleGroups[cycle];
+    var plantNames  = Object.keys(cyclePlants).sort();
+
+    html += '<div class="section-block">';
+    html += '<div class="section-title">';
+    html += '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+    html += cycle.toUpperCase() + ' TASKS</div>';
+    html += '<div class="dash-wrap"><table class="dash">';
+
+    // Build month headers
+    var mhdr = '<tr>';
+    mhdr += '<th class="col-no">NO.</th>';
+    mhdr += '<th class="col-loc">LOCATION</th>';
+    mhdr += '<th class="col-typ">TYPE</th>';
+    mhdr += '<th class="col-cyc">CYCLE</th>';
+    DB.MONTHS.forEach(function(m, i) {
+      var isCur = (i === curMonth && DB.year === curYear);
+      mhdr += '<th class="col-mon' + (isCur ? ' cur-month' : '') + '">' + m + '</th>';
+    });
+    mhdr += '</tr>';
+
+    html += '<thead>' + mhdr + '</thead>';
+    html += '<tbody>';
+
+    var rowNum = 1;
+    plantNames.forEach(function(plantName) {
+      html += '<tr class="row-phase"><td colspan="16">' + plantName.toUpperCase() + '</td></tr>';
+
+      cyclePlants[plantName].forEach(function(area) {
+        html += '<tr class="data-row">';
+        html += '<td class="td-no">' + rowNum++ + '</td>';
+        html += '<td class="td-loc"><span class="area-link" onclick="openAreaInspection(' + "'" + area.areaID + "','" + area.plantID + "'" + ')">' + esc(area.areaName) + '</span></td>';
+        html += '<td class="td-typ"><span class="badge-type">Internal</span></td>';
+        html += '<td class="td-cyc"><span class="badge-cycle">' + esc(area.cycle) + '</span></td>';
+
+        area.months.forEach(function(mo, mi) {
+          var isCur = (mi === curMonth && DB.year === curYear);
+          html += '<td class="td-mon" onclick="openModal(' + "'" + area.areaID + "'," + mi + ')">';
+
+          if (mo.status === 'upcoming') {
+            html += '<div class="cell-inner s-upcoming"><span class="cell-icon up">&mdash;</span></div>';
+          } else if (mo.status === 'completed') {
+            html += '<div class="cell-inner s-completed">' +
+              '<span class="cell-icon ok">&#10003;</span>' +
+              '<span class="cell-score ok">' + mo.completed + '/' + mo.total + '</span>' +
+            '</div>';
+          } else {
+            var missedStr = (mo.missedDays && mo.missedDays.length) ? mo.missedDays.join(', ') : '';
+            html += '<div class="cell-inner ' + (mo.completed > 0 ? 's-partial' : 's-none') + '">' +
+              '<span class="cell-icon bad">&#10007;</span>' +
+              '<span class="cell-score bad">' + mo.completed + '/' + mo.total + '</span>' +
+              (missedStr ? '<span class="cell-missed">' + missedStr + '</span>' : '') +
+            '</div>';
+          }
+          html += '</td>';
+        });
+        html += '</tr>';
+      });
+    });
+
+    html += '</tbody>';
+    // Repeat footer header
+    html += '<tfoot class="sticky-foot">' + mhdr.replace(/<tr>/, '<tr>').replace(/th class="col-mon/g, 'th class="col-mon') + '</tfoot>';
+    html += '</table></div></div>';
+  });
+
+  if (!html || !cycles.length) html += '<div style="text-align:center;padding:40px;color:var(--gray-400)">No inspection data found for ' + DB.year + '</div>';
+  document.getElementById('main').innerHTML = html;
+}
+
+// MODAL
+function openModal(areaID, monthIdx) {
+  document.getElementById('m-title').textContent = 'Loading...';
+  document.getElementById('m-sub').textContent   = '';
+  document.getElementById('m-pill').textContent  = '';
+  document.getElementById('m-stats').innerHTML   = '';
+  document.getElementById('m-grid').innerHTML    = '<div style="text-align:center;padding:30px"><div class="spinner"></div></div>';
+  document.getElementById('detail-modal').classList.add('open');
+
+  gasCall('getAreaMonthDetail', areaID, DB.year, monthIdx).then(function(data) {
+    if (!data || data.error) {
+      document.getElementById('m-title').textContent = 'Error: ' + esc((data && data.error) || '');
+      return;
+    }
+    var areaName = areaID;
+    if (DB.data) DB.data.areas.forEach(function(a){ if (a.areaID === areaID) areaName = a.areaName; });
+
+    document.getElementById('m-title').textContent = areaName;
+    document.getElementById('m-sub').textContent   = DB.MONTHS_FULL[monthIdx] + ' ' + DB.year + ' \u2014 ' + data.cycle;
+
+    var missed = data.requiredCount - data.completedCount;
+    var pct    = data.requiredCount > 0 ? Math.round(data.completedCount / data.requiredCount * 100) : 0;
+    document.getElementById('m-pill').textContent  = data.completedCount + ' / ' + data.requiredCount + ' days completed';
+
+    document.getElementById('m-stats').innerHTML =
+      '<div class="ms"><div class="ms-val" style="color:var(--green-600)">' + data.completedCount + '</div><div class="ms-lbl">Completed</div></div>' +
+      '<div class="ms"><div class="ms-val" style="color:var(--red-600)">'   + missed + '</div><div class="ms-lbl">Missed</div></div>' +
+      '<div class="ms"><div class="ms-val">' + data.requiredCount + '</div><div class="ms-lbl">Required</div></div>' +
+      '<div class="ms"><div class="ms-val" style="color:' + (pct===100?'var(--green-600)':'var(--red-600)') + '">' + pct + '%</div><div class="ms-lbl">Complete</div></div>';
+
+    // Day grid - add day-of-week headers
+    var DOW = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    var firstDow = new Date(DB.year, monthIdx, 1).getDay();
+    var gridHtml = DOW.map(function(d){ return '<div class="day-hdr">' + d + '</div>'; }).join('');
+
+    // Empty cells before first day
+    for (var i = 0; i < firstDow; i++) gridHtml += '<div></div>';
+
+    data.days.forEach(function(d) {
+      var cls  = 'skip';
+      var icon = '<span style="color:var(--gray-200);font-size:12px">&mdash;</span>';
+      var tech = '';
+
+      if (d.required) {
+        if (d.future) {
+          cls  = 'future';
+          icon = '<span style="color:var(--gray-300);font-size:14px">&#9679;</span>';
+        } else if (d.done) {
+          cls  = 'done';
+          icon = '<span style="color:var(--green-600);font-size:16px;font-weight:700">&#10003;</span>';
+          if (d.techs && d.techs.length) tech = '<div class="dc-tech">' + esc(d.techs[0].substring(0,8)) + '</div>';
+        } else {
+          cls  = 'missed';
+          icon = '<span style="color:var(--red-600);font-size:16px;font-weight:700">&#10007;</span>';
+        }
+      }
+
+      gridHtml += '<div class="day-cell ' + cls + '">' +
+        '<div class="dc-num">' + String(d.day).padStart(2,'0') + '</div>' +
+        '<div class="dc-icon">' + icon + '</div>' +
+        tech +
+      '</div>';
+    });
+
+    document.getElementById('m-grid').innerHTML = gridHtml;
+  }).catch(function(e) {
+    document.getElementById('m-title').textContent = 'Error: ' + esc(e.message);
+  });
+}
+
+function closeModal() { document.getElementById('detail-modal').classList.remove('open'); }
+document.addEventListener('click', function(e){ if (e.target.id === 'detail-modal') closeModal(); });
+
+// Open area in main app
+function openAreaInspection(areaID, plantID) {
+  gasCall('getWebAppUrl').then(function(u) {
+    window.open(u + '?openArea=' + encodeURIComponent(areaID) + '&plantID=' + encodeURIComponent(plantID), '_self');
+  });
+}
+
+// EXPORT CSV
+function exportCSV() {
+  if (!DB.data) return;
+  var areas    = DB.data.areas;
+  var filtered = DB.cycleFilter === 'All' ? areas : areas.filter(function(a){ return a.cycle === DB.cycleFilter; });
+  var rows     = [];
+
+  rows.push(['Factory Inspection Checklist \u2014 ' + DB.year]);
+  rows.push([]);
+  rows.push(['NO.','LOCATION','TYPE','CYCLE'].concat(DB.MONTHS));
+
+  var cycleGroups = {};
+  filtered.forEach(function(area) {
+    if (!cycleGroups[area.cycle]) cycleGroups[area.cycle] = {};
+    if (!cycleGroups[area.cycle][area.plantName]) cycleGroups[area.cycle][area.plantName] = [];
+    cycleGroups[area.cycle][area.plantName].push(area);
+  });
+
+  DB.CYCLE_ORDER.filter(function(c){ return cycleGroups[c]; }).forEach(function(cycle) {
+    rows.push([cycle.toUpperCase() + ' TASKS']);
+    var rowNum = 1;
+    Object.keys(cycleGroups[cycle]).sort().forEach(function(plantName) {
+      rows.push(['', plantName]);
+      cycleGroups[cycle][plantName].forEach(function(area) {
+        var row = [rowNum++, area.areaName, 'Internal', area.cycle];
+        area.months.forEach(function(mo) {
+          if (mo.status === 'upcoming') { row.push('\u2014'); }
+          else if (mo.status === 'completed') { row.push('\u2713 ' + mo.completed + '/' + mo.total); }
+          else {
+            var cell = '\u2717 ' + mo.completed + '/' + mo.total;
+            if (mo.missedDays && mo.missedDays.length) cell += '\nMissed: ' + mo.missedDays.join(', ');
+            row.push(cell);
+          }
+        });
+        rows.push(row);
+      });
+    });
+    rows.push([]);
+  });
+
+  var csv = rows.map(function(row) {
+    return row.map(function(cell) {
+      var s = String(cell === null || cell === undefined ? '' : cell);
+      if (s.indexOf(',') >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0) s = '"' + s.replace(/"/g,'""') + '"';
+      return s;
+    }).join(',');
+  }).join('\r\n');
+
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url; a.download = 'Inspection_Dashboard_' + DB.year + '.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
