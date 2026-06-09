@@ -1,0 +1,3378 @@
+<script>
+// ============================================================
+// FACTORY MAINTENANCE PLATFORM v4.0 — Javascript.html
+// Fixed: escaped <\/svg> in JS strings, fixed <triangle> SVG
+// ============================================================
+
+// ── APP STATE ────────────────────────────────────────────────
+const APP = {
+  session: null,
+  plants: [], areas: [], equipment: [],
+  currentPlant: null, currentArea: null, currentEquip: null, currentInspection: null,
+  dashStats: {}, plantStats: {}, areaStats: {},
+  equipWithStatus: [], templates: [], technicians: [],
+  areaPage: 1, areaPageSize: 6,
+  equipPage: 1, equipPageSize: 6,
+  equipSearch: '', equipStatusFilter: '', equipCycleFilter: '',
+  equipViewMode: 'grid',
+  selectedDate: (function() {
+    var d = new Date();
+    // Use local date string (not UTC) to match server timezone
+    var y = d.getFullYear();
+    var m = String(d.getMonth() + 1).padStart(2, '0');
+    var day = String(d.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  })(),
+  checklist: [],
+  clGroupBy: 'cycle',
+  clSearch: '',
+  clCycleFilter: 'All',
+  allPlantStats: {},
+  cache: { plantsTs: 0, areasTs: {}, checklistTs: {} },
+  CACHE_TTL: 60000,
+};
+
+// ── SCREENS ───────────────────────────────────────────────────
+var SCREEN_IDS = ['login-screen', 'screen-plants', 'screen-areas', 'screen-equipment', 'screen-form', 'screen-checklist', 'screen-dashboard', 'screen-fe-dashboard', 'screen-fe-map', 'screen-fe-report', 'screen-fe-settings'];
+var SCREEN_MAP = {
+  login:       'login-screen',
+  plants:      'screen-plants',
+  areas:       'screen-areas',
+  equipment:   'screen-equipment',
+  form:        'screen-form',
+  checklist:   'screen-checklist',
+  dashboard:      'screen-dashboard',
+  'fe-dashboard': 'screen-fe-dashboard',
+  'fe-map':       'screen-fe-map',
+  'fe-report':    'screen-fe-report',
+  'fe-settings':  'screen-fe-settings'
+};
+
+function showScreen(name) {
+  // Hide all screens
+  SCREEN_IDS.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+
+  var nav = document.getElementById('top-nav');
+  var app = document.getElementById('app');
+
+  if (name === 'login') {
+    if (nav) nav.style.display = 'none';
+    if (app) app.style.marginTop = '0';
+    var loginEl = document.getElementById('login-screen');
+    if (loginEl) loginEl.style.display = 'flex';
+  } else {
+    if (nav) nav.style.display = 'flex';
+    if (app) app.style.marginTop = 'var(--nav-h)';
+    var targetID = SCREEN_MAP[name];
+    if (targetID) {
+      var targetEl = document.getElementById(targetID);
+      if (targetEl) targetEl.style.display = 'block';
+    }
+  }
+  window.scrollTo(0, 0);
+}
+
+// ── GAS CALL HELPER ───────────────────────────────────────────
+function gasCall(fn) {
+  var args = Array.prototype.slice.call(arguments, 1);
+  return new Promise(function(resolve, reject) {
+    var runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+    runner[fn].apply(runner, args);
+  });
+}
+
+// ── TOAST ─────────────────────────────────────────────────────
+function showToast(msg, type, duration) {
+  type = type || 'success';
+  duration = duration || 3000;
+  var svgCheck = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"><\/polyline><\/svg>';
+  var svgX = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"><\/circle><line x1="15" y1="9" x2="9" y2="15"><\/line><line x1="9" y1="9" x2="15" y2="15"><\/line><\/svg>';
+  var svgWarn = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="10.29 3.86 1.82 18 22.18 18 13.71 3.86 10.29 3.86"><\/polygon><line x1="12" y1="9" x2="12" y2="13"><\/line><line x1="12" y1="17" x2="12.01" y2="17"><\/line><\/svg>';
+  var icons = { success: svgCheck, error: svgX, warning: svgWarn };
+  var t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.innerHTML = (icons[type] || '') + '<span style="margin-left:6px">' + escHtml(msg) + '<\/span>';
+  document.getElementById('toast-container').appendChild(t);
+  setTimeout(function() {
+    t.style.opacity = '0'; t.style.transform = 'translateX(100%)'; t.style.transition = 'all .3s';
+    setTimeout(function() { t.remove(); }, 300);
+  }, duration);
+}
+
+// ── LOADING ───────────────────────────────────────────────────
+function setLoading(show, msg) {
+  var el = document.getElementById('loading-overlay');
+  if (!el) return;
+  if (show) {
+    el.style.display = 'flex';
+    var txt = el.querySelector('.loading-text');
+    if (txt) txt.textContent = msg || 'Loading...';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// ── UTILITY ───────────────────────────────────────────────────
+function escHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getAreaIcon(name) {
+  var n = (name || '').toLowerCase();
+  if (n.indexOf('consumer') >= 0 || n.indexOf('33kv') >= 0 || n.indexOf('ht') >= 0) return { emoji: '\u26A1', bg: '#fef9c3', color: '#854d0e' };
+  if (n.indexOf('transform') >= 0) return { emoji: '\uD83D\uDD0C', bg: '#e0e7ff', color: '#3730a3' };
+  if (n.indexOf('msb') >= 0 || n.indexOf('lv') >= 0 || n.indexOf('420') >= 0) return { emoji: '\uD83D\uDD0B', bg: '#dcfce7', color: '#166534' };
+  if (n.indexOf('hygro') >= 0 || n.indexOf('humidity') >= 0 || n.indexOf('temp') >= 0) return { emoji: '\uD83D\uDCA7', bg: '#dbeafe', color: '#1e40af' };
+  if (n.indexOf('solar') >= 0) return { emoji: '\u2600\uFE0F', bg: '#fef3c7', color: '#92400e' };
+  if (n.indexOf('fcu') >= 0 || n.indexOf('office') >= 0) return { emoji: '\u2744\uFE0F', bg: '#e0f2fe', color: '#075985' };
+  if (n.indexOf('ahu') >= 0) return { emoji: '\uD83D\uDCA8', bg: '#f3e8ff', color: '#6b21a8' };
+  if (n.indexOf('chiller') >= 0) return { emoji: '\uD83C\uDF21\uFE0F', bg: '#cffafe', color: '#164e63' };
+  if (n.indexOf('testing') >= 0 || n.indexOf('test') >= 0) return { emoji: '\uD83D\uDD2C', bg: '#fce7f3', color: '#9d174d' };
+  if (n.indexOf('production') >= 0 || n.indexOf('line') >= 0) return { emoji: '\uD83C\uDFED', bg: '#fee2e2', color: '#991b1b' };
+  return { emoji: '\u2699\uFE0F', bg: '#f3f4f6', color: '#374151' };
+}
+
+function getCycleBadgeClass(cycle) {
+  var map = { 'Daily': 'badge-blue', 'Weekly': 'badge-green', 'Bi-Weekly': 'badge-green', 'Semi-Monthly': 'badge-purple', 'Monthly': 'badge-purple', 'Quarterly': 'badge-orange', 'Semi-Annual': 'badge-orange', 'Annual': 'badge-red' };
+  return map[cycle] || 'badge-gray';
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return 'Never';
+  try {
+    var d = new Date(dateStr);
+    return d.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + d.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' });
+  } catch(e) { return dateStr; }
+}
+
+function formatDateShort(dateStr) {
+  if (!dateStr) return 'Never';
+  try {
+    var d = new Date(dateStr);
+    return d.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch(e) { return dateStr; }
+}
+
+// ── LOGIN ──────────────────────────────────────────────────────
+var loginState = { selectedTech: null, pin: '' };
+
+async function initLogin() {
+  setLoading(true, 'Loading technicians...');
+  try {
+    var techs = await gasCall('getTechnicians');
+    APP.technicians = techs || [];
+    renderTechList();
+    showStep('step-select');
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load technicians: ' + e.message, 'error');
+  }
+}
+
+function renderTechList() {
+  var list = document.getElementById('tech-list');
+  if (!list) return;
+  list.innerHTML = APP.technicians.map(function(t) {
+    return '<div class="tech-item" onclick="selectTech(\'' + t.techID + '\')">' +
+      '<div class="tech-avatar-sm">' + escHtml(t.name.charAt(0).toUpperCase()) + '<\/div>' +
+      '<div class="tech-info">' +
+        '<div class="tech-name">' + escHtml(t.name) + '<\/div>' +
+        '<div class="tech-role">' + escHtml(t.role) + '<\/div>' +
+      '<\/div>' +
+      '<svg class="tech-check" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"><\/polyline><\/svg>' +
+    '<\/div>';
+  }).join('');
+}
+
+function selectTech(techID) {
+  loginState.selectedTech = null;
+  for (var i = 0; i < APP.technicians.length; i++) {
+    if (APP.technicians[i].techID === techID) { loginState.selectedTech = APP.technicians[i]; break; }
+  }
+  document.querySelectorAll('.tech-item').forEach(function(el) { el.classList.remove('selected'); });
+  var items = document.querySelectorAll('.tech-item');
+  for (var j = 0; j < items.length; j++) {
+    if (items[j].getAttribute('onclick') && items[j].getAttribute('onclick').indexOf(techID) >= 0) {
+      items[j].classList.add('selected'); break;
+    }
+  }
+  setTimeout(function() { showStep('step-pin'); }, 200);
+  var nameEl = document.getElementById('pin-tech-name');
+  if (nameEl && loginState.selectedTech) nameEl.textContent = loginState.selectedTech.name;
+}
+
+function showStep(id) {
+  document.querySelectorAll('.login-step').forEach(function(s) { s.classList.remove('active'); });
+  var el = document.getElementById(id);
+  if (el) el.classList.add('active');
+  if (id === 'step-pin') { loginState.pin = ''; updatePinDots(); }
+}
+
+function pinPress(val) {
+  if (val === 'DEL') { loginState.pin = loginState.pin.slice(0, -1); }
+  else if (loginState.pin.length < 4) { loginState.pin += val; }
+  updatePinDots();
+  if (loginState.pin.length === 4) setTimeout(doLogin, 200);
+}
+
+function updatePinDots() {
+  var dots = document.querySelectorAll('.pin-dot');
+  dots.forEach(function(d, i) { d.classList.toggle('filled', i < loginState.pin.length); });
+}
+
+async function doLogin() {
+  if (!loginState.selectedTech) return;
+  setLoading(true, 'Verifying...');
+  try {
+    var result = await gasCall('verifyLogin', loginState.selectedTech.techID, loginState.pin);
+    setLoading(false);
+    if (result.success) {
+      APP.session = result;
+      // Persist session so page reload doesn't require re-login
+      try { sessionStorage.setItem('fmp_session', JSON.stringify(result)); } catch(e) {}
+      var nameEl = document.getElementById('nav-user-name');
+      var avatarEl = document.getElementById('nav-avatar-text');
+      if (nameEl) nameEl.textContent = result.name;
+      if (avatarEl) avatarEl.textContent = result.name.charAt(0).toUpperCase();
+      showToast('Welcome, ' + result.name + '!', 'success');
+
+      // Check if direct FE QR link
+      var directFeId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
+      if (directFeId) { checkFEDirectLink(); return; }
+
+      // Check if navigating from dashboard to a specific area
+      var openAreaID  = (typeof OPEN_AREA_ID  !== 'undefined') ? OPEN_AREA_ID  : '';
+      var openPlantID = (typeof OPEN_PLANT_ID !== 'undefined') ? OPEN_PLANT_ID : '';
+      if (openAreaID) {
+        await loadPlantsScreen();
+        try {
+          var areasData = await gasCall('getAreasWithStats', openPlantID || (APP.plants[0] && APP.plants[0].plantID));
+          var foundArea = null;
+          (areasData || []).forEach(function(a){ if (a.areaID === openAreaID) foundArea = a; });
+          if (foundArea) {
+            for (var pi = 0; pi < APP.plants.length; pi++) {
+              if (APP.plants[pi].plantID === foundArea.plantID) { APP.currentPlant = APP.plants[pi]; break; }
+            }
+            APP.currentArea = foundArea;
+            APP.areas = areasData;
+            await loadEquipmentScreen();
+            return;
+          }
+        } catch(navErr) { console.log('Auto-nav error:', navErr); }
+      }
+      await loadPlantsScreen();
+    } else {
+      loginState.pin = '';
+      updatePinDots();
+      var errEl = document.getElementById('login-error');
+      if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Incorrect PIN. Please try again.'; }
+      setTimeout(function() { if (errEl) errEl.style.display = 'none'; }, 2000);
+    }
+  } catch(e) {
+    setLoading(false);
+    showToast('Login error: ' + e.message, 'error');
+  }
+}
+
+function logout() {
+  APP.session = null;
+  try { sessionStorage.removeItem('fmp_session'); } catch(e) {}
+  loginState = { selectedTech: null, pin: '' };
+  closeDropdown();
+  showScreen('login');
+  initLogin();
+}
+
+// ── PLANTS SCREEN ──────────────────────────────────────────────
+async function loadPlantsScreen() {
+  showScreen('plants');
+  var now = Date.now();
+  // Use cached data if fresh (within 60s) and already rendered
+  if (APP.plants.length > 0 && (now - APP.cache.plantsTs) < APP.CACHE_TTL) {
+    renderPlantsScreen();
+    return;
+  }
+  setLoading(true, 'Loading...');
+  try {
+    // Single call returns plants + dashboard stats + per-plant stats
+    var result = await gasCall('getDashboardFull');
+    if (result && result.error) throw new Error(result.error);
+    APP.plants    = result.plants    || [];
+    APP.dashStats = result.dashboard || {};
+    APP.allPlantStats = result.plantStats || {};
+    APP.cache.plantsTs = Date.now();
+    renderPlantsScreen();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load: ' + e.message, 'error');
+  }
+}
+
+function renderPlantsScreen() {
+  var s = APP.dashStats;
+  document.getElementById('dash-total-plants').textContent = s.totalPlants || 0;
+  document.getElementById('dash-total-areas').textContent  = s.totalAreas  || 0;
+  document.getElementById('dash-total-equip').textContent  = s.totalEquipment || 0;
+  document.getElementById('dash-pending').textContent      = s.pendingToday  || 0;
+
+  // Greeting bar
+  var now  = new Date();
+  var hr   = now.getHours();
+  var grt  = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
+  var name = APP.session ? APP.session.name : '';
+  var dateStr = now.toLocaleDateString('en-MY', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  var timeStr = now.toLocaleTimeString('en-MY', { hour:'2-digit', minute:'2-digit', hour12:true });
+  var gEl = document.getElementById('greeting-text');  if (gEl) gEl.textContent = grt + ',';
+  var nEl = document.getElementById('greeting-name');  if (nEl) nEl.textContent = name;
+  var dEl = document.getElementById('greeting-date');  if (dEl) dEl.textContent = dateStr;
+  var tEl = document.getElementById('greeting-time');  if (tEl) tEl.textContent = timeStr;
+
+  var container = document.getElementById('plant-cards');
+  if (!container) return;
+  if (!APP.plants.length) {
+    container.innerHTML = '<div class="empty-state"><h3>No Plants Found<\/h3><p>Run seedData() in Apps Script editor.<\/p><\/div>';
+    return;
+  }
+
+  container.innerHTML = APP.plants.map(function(p, idx) {
+    var stats     = (APP.allPlantStats && APP.allPlantStats[p.plantID]) || {};
+    var total     = stats.totalEquipment || 0;
+    var pending   = stats.pendingToday   || 0;
+    var completed = total - pending;
+    var pct       = total > 0 ? Math.round((completed / total) * 100) : 0;
+    var pctColor  = pct >= 80 ? '#16a34a' : pct >= 50 ? '#ea580c' : '#dc2626';
+    var fillColor = pct >= 80 ? '#16a34a' : pct >= 50 ? '#f97316' : '#ef4444';
+    var isP2      = idx > 0;
+
+    return '<div class="plant-card-v2' + (isP2 ? ' p2' : '') + '">' +
+      '<div class="plant-card-v2-body">' +
+
+        '<div class="plant-v2-header">' +
+          '<div style="display:flex;align-items:center;gap:12px">' +
+            '<div class="plant-v2-badge">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="15" rx="2" ry="2"><\/rect><polyline points="17 2 12 7 7 2"><\/polyline><\/svg>' +
+            '<\/div>' +
+            '<div>' +
+              '<div class="plant-v2-name">' + escHtml(p.plantName) + '<\/div>' +
+              '<div class="plant-v2-loc">' +
+                '<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"><\/path><circle cx="12" cy="10" r="3"><\/circle><\/svg>' +
+                escHtml(p.location || 'Factory') +
+              '<\/div>' +
+            '<\/div>' +
+          '<\/div>' +
+          '<div style="font-size:22px;font-weight:800;color:' + pctColor + '">' + pct + '%<\/div>' +
+        '<\/div>' +
+
+        '<div class="plant-v2-stats" id="plant-stats-' + p.plantID + '">' +
+          '<div class="plant-v2-stat"><div class="plant-v2-stat-val">' + (stats.totalAreas||'–') + '<\/div><div class="plant-v2-stat-lbl">Areas<\/div><\/div>' +
+          '<div class="plant-v2-stat"><div class="plant-v2-stat-val">' + (total||'–') + '<\/div><div class="plant-v2-stat-lbl">Equipment<\/div><\/div>' +
+          '<div class="plant-v2-stat"><div class="plant-v2-stat-val" style="color:#16a34a">' + completed + '<\/div><div class="plant-v2-stat-lbl">Done Today<\/div><\/div>' +
+          '<div class="plant-v2-stat"><div class="plant-v2-stat-val" style="color:#dc2626">' + pending + '<\/div><div class="plant-v2-stat-lbl">Pending<\/div><\/div>' +
+        '<\/div>' +
+
+        '<div class="plant-v2-progress-wrap">' +
+          '<div class="plant-v2-progress-header">' +
+            '<span class="plant-v2-progress-label">Today Completion<\/span>' +
+            '<span class="plant-v2-progress-pct" style="color:' + pctColor + '">' + completed + ' / ' + total + '<\/span>' +
+          '<\/div>' +
+          '<div class="plant-v2-progress-bar"><div class="plant-v2-progress-fill" style="width:' + pct + '%;background:' + fillColor + '"><\/div><\/div>' +
+        '<\/div>' +
+
+        '<div class="plant-v2-actions">' +
+          '<button class="plant-v2-btn plant-v2-btn-checklist" onclick="openPlant(' + "'" + p.plantID + "'" + ')">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"><\/path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"><\/path><\/svg> Checklist' +
+          '<\/button>' +
+          '<button class="plant-v2-btn plant-v2-btn-areas" onclick="openPlantAreas(' + "'" + p.plantID + "'" + ')">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"><\/line><line x1="8" y1="12" x2="21" y2="12"><\/line><line x1="8" y1="18" x2="21" y2="18"><\/line><\/svg> By Area' +
+          '<\/button>' +
+        '<\/div>' +
+      '<\/div>' +
+    '<\/div>';
+  }).join('');
+}
+
+async function loadPlantCardStats(plantID) {
+  try {
+    var stats = await gasCall('getPlantStats', plantID);
+    var el = document.getElementById('plant-stats-' + plantID);
+    if (el && stats) {
+      var nums = el.querySelectorAll('.stat-num');
+      if (nums[0]) nums[0].textContent = stats.totalAreas || 0;
+      if (nums[1]) nums[1].textContent = stats.totalEquipment || 0;
+      if (nums[2]) nums[2].textContent = stats.pendingToday || 0;
+    }
+  } catch(e) {}
+}
+
+async function openPlant(plantID) {
+  for (var i = 0; i < APP.plants.length; i++) {
+    if (APP.plants[i].plantID === plantID) { APP.currentPlant = APP.plants[i]; break; }
+  }
+  await loadChecklistScreen(plantID);
+}
+
+async function openPlantAreas(plantID) {
+  for (var i = 0; i < APP.plants.length; i++) {
+    if (APP.plants[i].plantID === plantID) { APP.currentPlant = APP.plants[i]; break; }
+  }
+  APP.areaPage = 1;
+  await loadAreasScreen();
+}
+
+// ── AREAS SCREEN ───────────────────────────────────────────────
+async function loadAreasScreen() {
+  showScreen('areas');
+  var now = Date.now();
+  var plantID = APP.currentPlant ? APP.currentPlant.plantID : '';
+  // Use cached data if fresh and same plant
+  if (APP.areas.length > 0 && APP.cache.areasTs[plantID] && (now - APP.cache.areasTs[plantID]) < APP.CACHE_TTL) {
+    renderAreasScreen();
+    return;
+  }
+  setLoading(true, 'Loading areas...');
+  try {
+    // Single call: areas + stats computed server-side in one sheet read
+    var areasWithStats = await gasCall('getAreasWithStats', APP.currentPlant.plantID);
+    if (areasWithStats && areasWithStats.error) throw new Error(areasWithStats.error);
+    areasWithStats = areasWithStats || [];
+    APP.areas = areasWithStats;
+    APP.areaStats = {};
+    areasWithStats.forEach(function(a) { APP.areaStats[a.areaID] = a; });
+    APP.cache.areasTs[plantID] = Date.now();
+    renderAreasScreen();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load areas: ' + e.message, 'error');
+  }
+}
+
+function renderAreasScreen() {
+  var p = APP.currentPlant;
+  var nameEl = document.getElementById('areas-plant-name');
+  var bcEl = document.getElementById('breadcrumb-plant');
+  if (nameEl) nameEl.textContent = p.plantName;
+  if (bcEl) bcEl.textContent = p.plantName;
+
+  var totalEquip = 0, totalCompleted = 0;
+  Object.values(APP.areaStats).forEach(function(a) {
+    totalEquip += (a.totalEquipment || 0);
+    totalCompleted += (a.completedToday || 0);
+  });
+  var totalPending = totalEquip - totalCompleted;
+  var completedPct = totalEquip > 0 ? Math.round((totalCompleted / totalEquip) * 100) : 0;
+  var pendingPct = 100 - completedPct;
+
+  document.getElementById('areas-total-areas').textContent = APP.areas.length;
+  document.getElementById('areas-total-equip').textContent = totalEquip;
+  document.getElementById('areas-completed').textContent = totalCompleted + ' (' + completedPct + '%)';
+  document.getElementById('areas-pending').textContent = totalPending + ' (' + pendingPct + '%)';
+
+  renderAreaCards();
+}
+
+function renderAreaCards() {
+  var start = (APP.areaPage - 1) * APP.areaPageSize;
+  var paged = APP.areas.slice(start, start + APP.areaPageSize);
+  var container = document.getElementById('area-cards');
+  if (!container) return;
+
+  container.innerHTML = paged.map(function(area) {
+    var stats = APP.areaStats[area.areaID] || {};
+    var pct = stats.progressPct || 0;
+    var icon = getAreaIcon(area.areaName);
+    var barClass = pct >= 70 ? 'green' : pct >= 30 ? 'orange' : 'red';
+    var statusBadge, statusClass;
+    if (pct === 100) { statusBadge = '\u2713 On Track'; statusClass = 'badge-green'; }
+    else if (pct > 0) { statusBadge = '\u23F3 Pending'; statusClass = 'badge-orange'; }
+    else { statusBadge = '\u2014 Not Due'; statusClass = 'badge-gray'; }
+
+    return '<div class="area-card">' +
+      '<div class="area-card-header">' +
+        '<div class="area-card-icon" style="background:' + icon.bg + ';font-size:22px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:12px;">' + icon.emoji + '<\/div>' +
+        '<div class="area-card-title">' +
+          '<div class="area-name">' + escHtml(area.areaName) + '<\/div>' +
+          '<div class="area-badges"><span class="badge badge-blue">Daily<\/span><span class="badge ' + statusClass + '">' + statusBadge + '<\/span><\/div>' +
+        '<\/div>' +
+      '<\/div>' +
+      '<div class="progress-bar-wrap"><div class="progress-bar-fill ' + barClass + '" style="width:' + pct + '%"><\/div><\/div>' +
+      '<div class="progress-pct">' + pct + '%<\/div>' +
+      '<div class="area-equip-stats">' +
+        '<div class="area-equip-stat"><div class="label">Equipment<\/div><div class="value">' + (stats.totalEquipment || 0) + '<\/div><\/div>' +
+        '<div class="area-equip-stat"><div class="label">Completed<\/div><div class="value">' + (stats.completedToday || 0) + '<\/div><\/div>' +
+        '<div class="area-equip-stat"><div class="label">Pending<\/div><div class="value red">' + (stats.pendingToday || 0) + '<\/div><\/div>' +
+      '<\/div>' +
+      '<div class="area-actions">' +
+        '<button class="btn btn-primary btn-sm" style="flex:1" onclick="openArea(\'' + area.areaID + '\')">\u25B6 Start Inspection<\/button>' +
+        '<button class="btn btn-outline btn-sm" style="flex:1" onclick="openReport(\'' + area.areaID + '\')">&#128202; View Report<\/button>' +
+      '<\/div>' +
+    '<\/div>';
+  }).join('');
+
+  renderAreaPagination();
+}
+
+function renderAreaPagination() {
+  var total = APP.areas.length;
+  var pages = Math.ceil(total / APP.areaPageSize);
+  var start = (APP.areaPage - 1) * APP.areaPageSize + 1;
+  var end = Math.min(APP.areaPage * APP.areaPageSize, total);
+  var infoEl = document.getElementById('area-page-info');
+  if (infoEl) infoEl.textContent = 'Showing ' + start + ' to ' + end + ' of ' + total + ' areas';
+
+  var btns = document.getElementById('area-page-btns');
+  if (!btns) return;
+  var html = '<button class="pg-btn" onclick="areaChangePage(' + (APP.areaPage-1) + ')" ' + (APP.areaPage===1?'disabled':'') + '>\u2039 Previous<\/button>';
+  for (var i = 1; i <= pages; i++) html += '<button class="pg-btn ' + (i===APP.areaPage?'active':'') + '" onclick="areaChangePage(' + i + ')">' + i + '<\/button>';
+  html += '<button class="pg-btn" onclick="areaChangePage(' + (APP.areaPage+1) + ')" ' + (APP.areaPage===pages?'disabled':'') + '>Next \u203A<\/button>';
+  btns.innerHTML = html;
+}
+
+function areaChangePage(p) {
+  var pages = Math.ceil(APP.areas.length / APP.areaPageSize);
+  if (p < 1 || p > pages) return;
+  APP.areaPage = p;
+  renderAreaCards();
+  window.scrollTo(0, 0);
+}
+
+async function openArea(areaID) {
+  for (var i = 0; i < APP.areas.length; i++) {
+    if (APP.areas[i].areaID === areaID) { APP.currentArea = APP.areas[i]; break; }
+  }
+  APP.equipPage = 1;
+  APP.equipSearch = '';
+  APP.equipStatusFilter = '';
+  APP.equipCycleFilter = '';
+  await loadEquipmentScreen();
+}
+
+// ── EQUIPMENT SCREEN ───────────────────────────────────────────
+async function loadEquipmentScreen() {
+  showScreen('equipment');
+  setLoading(true, 'Loading equipment...');
+  try {
+    var equipWithStatus = await gasCall('getEquipmentWithStatus', APP.currentArea.areaID, APP.selectedDate);
+    APP.equipWithStatus = equipWithStatus || [];
+    renderEquipmentScreen();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load equipment: ' + e.message, 'error');
+  }
+}
+
+function renderEquipmentScreen() {
+  var bcPlant = document.getElementById('equip-breadcrumb-plant');
+  var bcArea = document.getElementById('equip-breadcrumb-area');
+  var dateDisp = document.getElementById('equip-date-display');
+  if (bcPlant) bcPlant.textContent = APP.currentPlant.plantName;
+  if (bcArea) bcArea.textContent = APP.currentArea.areaName;
+  if (dateDisp) dateDisp.textContent = 'Today, ' + formatDateShort(APP.selectedDate);
+
+  var all = APP.equipWithStatus;
+  var completed = all.filter(function(e) { return e.equipStatus === 'Completed Today'; }).length;
+  var pending = all.filter(function(e) { return e.equipStatus === 'Pending'; }).length;
+  var overdue = all.filter(function(e) { return e.equipStatus === 'Overdue'; }).length;
+  var pctC = all.length > 0 ? Math.round((completed / all.length) * 100) : 0;
+  var pctP = all.length > 0 ? Math.round((pending / all.length) * 100) : 0;
+  var pctO = all.length > 0 ? Math.round((overdue / all.length) * 100) : 0;
+
+  document.getElementById('es-total').textContent = all.length;
+  document.getElementById('es-completed').textContent = completed + ' (' + pctC + '%)';
+  document.getElementById('es-pending').textContent = pending + ' (' + pctP + '%)';
+  document.getElementById('es-overdue').textContent = overdue + ' (' + pctO + '%)';
+  document.getElementById('es-tomorrow').textContent = pending;
+
+  renderEquipCards();
+}
+
+function getFilteredEquip() {
+  return APP.equipWithStatus.filter(function(eq) {
+    var search = APP.equipSearch.toLowerCase();
+    var matchSearch = !search || eq.equipmentName.toLowerCase().indexOf(search) >= 0 || (eq.assetTag || '').toLowerCase().indexOf(search) >= 0;
+    var matchStatus = !APP.equipStatusFilter || eq.equipStatus === APP.equipStatusFilter;
+    var matchCycle = !APP.equipCycleFilter || eq.inspectionCycle === APP.equipCycleFilter;
+    return matchSearch && matchStatus && matchCycle;
+  });
+}
+
+function renderEquipCards() {
+  var filtered = getFilteredEquip();
+  var start = (APP.equipPage - 1) * APP.equipPageSize;
+  var paged = filtered.slice(start, start + APP.equipPageSize);
+  var container = document.getElementById('equip-cards');
+  if (!container) return;
+  var isGrid = APP.equipViewMode === 'grid';
+  container.className = isGrid ? 'equip-grid' : 'equip-list';
+
+  if (!paged.length) {
+    container.innerHTML = '<div class="empty-state" style="grid-column:1\/-1"><h3>No Equipment Found<\/h3><p>Try adjusting your filters.<\/p><\/div>';
+  } else {
+    container.innerHTML = paged.map(function(eq) { return renderEquipCard(eq, isGrid); }).join('');
+  }
+  renderEquipPagination(filtered.length);
+}
+
+function renderEquipCard(eq, isGrid) {
+  var statusMap = {
+    'Completed Today': { cls: 'completed', badgeCls: 'badge-green', label: 'Completed Today' },
+    'Pending':         { cls: 'pending',   badgeCls: 'badge-orange', label: 'Pending' },
+    'Overdue':         { cls: 'overdue',   badgeCls: 'badge-red',    label: 'Overdue' }
+  };
+  var st = statusMap[eq.equipStatus] || statusMap['Pending'];
+  var dateDisplay = eq.lastInspection ? formatDate(eq.lastInspection) : 'Never inspected';
+  var isOverdueDate = eq.equipStatus === 'Overdue';
+
+  var iconSvg;
+  if (st.cls === 'completed') {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"><\/polyline><\/svg>';
+  } else if (st.cls === 'pending') {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"><\/circle><polyline points="12 6 12 12 16 14"><\/polyline><\/svg>';
+  } else {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"><\/circle><line x1="12" y1="8" x2="12" y2="12"><\/line><line x1="12" y1="16" x2="12.01" y2="16"><\/line><\/svg>';
+  }
+
+  return '<div class="equip-card' + (isGrid ? '' : ' list-view') + '">' +
+    '<div class="equip-status-icon ' + st.cls + '">' + iconSvg + '<\/div>' +
+    '<div class="equip-card-info">' +
+      '<div class="equip-name-row">' +
+        '<span class="equip-name">' + escHtml(eq.equipmentName) + '<\/span>' +
+        '<span class="badge ' + getCycleBadgeClass(eq.inspectionCycle) + '">' + escHtml(eq.inspectionCycle) + '<\/span>' +
+      '<\/div>' +
+      '<div class="equip-meta">Asset Tag: ' + escHtml(eq.assetTag || '\u2013') + ' | Location: ' + escHtml(APP.currentArea.areaName) + '<\/div>' +
+      '<div class="equip-last-insp">' +
+        '<div><div class="equip-last-label">Last Inspection<\/div><div class="equip-last-date' + (isOverdueDate ? ' overdue' : '') + '">\uD83D\uDCC5 ' + escHtml(dateDisplay) + '<\/div><\/div>' +
+        '<span class="badge ' + st.badgeCls + '">' + st.label + '<\/span>' +
+      '<\/div>' +
+      '<button class="btn-inspect" onclick="openInspectionForm(\'' + eq.equipID + '\')">Inspect \u2192<\/button>' +
+    '<\/div>' +
+  '<\/div>';
+}
+
+function renderEquipPagination(total) {
+  var pages = Math.ceil(total / APP.equipPageSize);
+  var start = Math.min((APP.equipPage - 1) * APP.equipPageSize + 1, total || 1);
+  var end = Math.min(APP.equipPage * APP.equipPageSize, total);
+  var infoEl = document.getElementById('equip-page-info');
+  if (infoEl) infoEl.textContent = 'Showing ' + start + ' to ' + end + ' of ' + total + ' equipment';
+
+  var btns = document.getElementById('equip-page-btns');
+  if (!btns) return;
+  var html = '<button class="pg-btn" onclick="equipChangePage(' + (APP.equipPage-1) + ')" ' + (APP.equipPage===1?'disabled':'') + '>\u2039 Previous<\/button>';
+  var maxP = Math.min(pages, 5);
+  for (var i = 1; i <= maxP; i++) html += '<button class="pg-btn ' + (i===APP.equipPage?'active':'') + '" onclick="equipChangePage(' + i + ')">' + i + '<\/button>';
+  html += '<button class="pg-btn" onclick="equipChangePage(' + (APP.equipPage+1) + ')" ' + (APP.equipPage>=pages||pages===0?'disabled':'') + '>Next \u203A<\/button>';
+  btns.innerHTML = html;
+}
+
+function equipChangePage(p) {
+  var pages = Math.ceil(getFilteredEquip().length / APP.equipPageSize);
+  if (p < 1 || p > pages) return;
+  APP.equipPage = p;
+  renderEquipCards();
+}
+
+function filterEquip() {
+  var s = document.getElementById('equip-search');
+  var sf = document.getElementById('equip-status-filter');
+  var cf = document.getElementById('equip-cycle-filter');
+  APP.equipSearch = s ? s.value : '';
+  APP.equipStatusFilter = sf ? sf.value : '';
+  APP.equipCycleFilter = cf ? cf.value : '';
+  APP.equipPage = 1;
+  renderEquipCards();
+}
+
+function setViewMode(mode) {
+  APP.equipViewMode = mode;
+  document.querySelectorAll('.view-btn').forEach(function(b) { b.classList.remove('active'); });
+  var btn = document.getElementById('view-btn-' + mode);
+  if (btn) btn.classList.add('active');
+  renderEquipCards();
+}
+
+// ── INSPECTION FORM ────────────────────────────────────────────
+async function openInspectionForm(equipID) {
+  for (var i = 0; i < APP.equipWithStatus.length; i++) {
+    if (APP.equipWithStatus[i].equipID === equipID) { APP.currentEquip = APP.equipWithStatus[i]; break; }
+  }
+  APP.currentInspection = { details: {} };
+  showScreen('form');
+  setLoading(true, 'Loading inspection form...');
+  try {
+    var results = await Promise.all([gasCall('getTemplates', equipID), gasCall('getTechnicians')]);
+    APP.templates = results[0] || [];
+    APP.technicians = results[1] || [];
+    renderInspectionForm();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load form: ' + e.message, 'error');
+  }
+}
+
+function renderInspectionForm() {
+  var eq = APP.currentEquip;
+  if (!eq) return;
+
+  var nameEl = document.getElementById('form-equip-name');
+  var assetEl = document.getElementById('form-asset-tag');
+  var locEl = document.getElementById('form-location');
+  var dateEl = document.getElementById('form-insp-date');
+  var bcPlant = document.getElementById('form-breadcrumb-plant');
+  var bcArea = document.getElementById('form-breadcrumb-area');
+  var bcEquip = document.getElementById('form-breadcrumb-equip');
+
+  if (nameEl) nameEl.textContent = eq.equipmentName;
+  if (assetEl) assetEl.textContent = 'Asset Tag: ' + (eq.assetTag || '\u2013');
+  if (locEl) locEl.textContent = 'Location: ' + (APP.currentArea ? APP.currentArea.areaName : '\u2013');
+  if (dateEl) dateEl.value = APP.selectedDate;
+  if (bcPlant) bcPlant.textContent = APP.currentPlant.plantName;
+  if (bcArea) bcArea.textContent = APP.currentArea.areaName;
+  if (bcEquip) bcEquip.textContent = eq.equipmentName;
+
+  var dotEl = document.getElementById('form-status-dot');
+  if (dotEl) {
+    if (eq.equipStatus === 'Completed Today') dotEl.className = 'status-dot green';
+    else if (eq.equipStatus === 'Overdue') dotEl.className = 'status-dot red';
+    else dotEl.className = 'status-dot orange';
+  }
+
+  var techSel = document.getElementById('form-tech-select');
+  if (techSel) {
+    techSel.innerHTML = APP.technicians.map(function(t) {
+      return '<option value="' + t.techID + '"' + (t.techID === APP.session.techID ? ' selected' : '') + '>' + escHtml(t.name) + '<\/option>';
+    }).join('');
+  }
+
+  var paramContainer = document.getElementById('param-container');
+  if (!paramContainer) return;
+
+  if (!APP.templates || APP.templates.length === 0) {
+    paramContainer.innerHTML = '<div class="no-params-msg">No parameters defined for this equipment. Add parameters via the Admin panel, then save a general note below.<\/div>';
+  } else {
+    var paramCards = APP.templates.map(function(t) { return renderParamCard(t); }).join('');
+    paramContainer.innerHTML =
+      '<div class="param-section">' +
+        '<div class="param-section-title">Inspection Parameters<\/div>' +
+        '<div class="param-section-sub">Enter all readings and verify within the acceptable range<\/div>' +
+        '<div class="param-grid">' + paramCards + '<\/div>' +
+      '<\/div>';
+  }
+}
+
+function renderParamCard(tmpl) {
+  var rangeText = tmpl.type === 'numeric' ? 'Range: ' + tmpl.minValue + ' \u2013 ' + tmpl.maxValue : '';
+  var unitText = tmpl.unit || '';
+
+  if (tmpl.type === 'yesno') {
+    return '<div class="param-card" id="pc-' + tmpl.templateID + '">' +
+      '<div class="param-name">' + escHtml(tmpl.parameterName) + '<\/div>' +
+      '<div class="param-range">' + (tmpl.required ? '* Required' : 'Optional') + '<\/div>' +
+      '<div class="param-yesno">' +
+        '<button class="yesno-btn yes" onclick="setYesNo(\'' + tmpl.templateID + '\',\'Yes\')">Yes<\/button>' +
+        '<button class="yesno-btn no" onclick="setYesNo(\'' + tmpl.templateID + '\',\'No\')">No<\/button>' +
+      '<\/div>' +
+      '<div class="param-status" id="ps-' + tmpl.templateID + '"><\/div>' +
+    '<\/div>';
+  }
+
+  if (tmpl.type === 'text') {
+    return '<div class="param-card" id="pc-' + tmpl.templateID + '">' +
+      '<div class="param-name">' + escHtml(tmpl.parameterName) + '<\/div>' +
+      '<div class="param-range">' + (tmpl.required ? '* Required' : 'Optional') + '<\/div>' +
+      '<input type="text" class="param-input" id="pi-' + tmpl.templateID + '" placeholder="Enter value" oninput="setTextParam(\'' + tmpl.templateID + '\')">' +
+      '<div class="param-status" id="ps-' + tmpl.templateID + '"><\/div>' +
+    '<\/div>';
+  }
+
+  // numeric — pass min/max as quoted strings to avoid blank/undefined args
+  var minArg = (tmpl.minValue !== '' && tmpl.minValue !== null && tmpl.minValue !== undefined) ? tmpl.minValue : "''";
+  var maxArg = (tmpl.maxValue !== '' && tmpl.maxValue !== null && tmpl.maxValue !== undefined) ? tmpl.maxValue : "''";
+  return '<div class="param-card" id="pc-' + tmpl.templateID + '">' +
+    '<div class="param-name">' + escHtml(tmpl.parameterName) + '<\/div>' +
+    '<div class="param-range" style="display:flex;justify-content:space-between"><span>' + rangeText + '<\/span><span style="color:var(--gray-400)">' + escHtml(unitText) + '<\/span><\/div>' +
+    '<input type="number" class="param-input" id="pi-' + tmpl.templateID + '" placeholder="Enter value" step="any"' +
+      ' onchange="evalParam(\'' + tmpl.templateID + '\',' + minArg + ',' + maxArg + ')"' +
+      ' oninput="evalParam(\'' + tmpl.templateID + '\',' + minArg + ',' + maxArg + ')">' +
+    '<div class="param-status" id="ps-' + tmpl.templateID + '"><\/div>' +
+  '<\/div>';
+}
+
+function evalParam(tID, min, max) {
+  var input = document.getElementById('pi-' + tID);
+  var card = document.getElementById('pc-' + tID);
+  var statusEl = document.getElementById('ps-' + tID);
+  if (!input || !card || !statusEl) return;
+  var val = parseFloat(input.value);
+
+  if (isNaN(val) || input.value === '') {
+    card.className = 'param-card';
+    statusEl.innerHTML = '';
+    APP.currentInspection.details[tID] = null;
+    return;
+  }
+
+  var tmpl = null;
+  for (var i = 0; i < APP.templates.length; i++) {
+    if (APP.templates[i].templateID === tID) { tmpl = APP.templates[i]; break; }
+  }
+
+  var status, label, dotCls;
+  var minNum = parseFloat(min);
+  var maxNum = parseFloat(max);
+  var hasRange = !isNaN(minNum) && !isNaN(maxNum) && min !== '' && max !== '';
+
+  if (!hasRange) {
+    // No range defined — record only, always Normal
+    status = 'Normal'; label = '\u2713 Recorded'; dotCls = 'normal';
+  } else if (val >= minNum && val <= maxNum) {
+    status = 'Normal';     label = '\u2713 Normal';       dotCls = 'normal';
+  } else {
+    status = 'OutOfRange'; label = '\u2715 Out of Range'; dotCls = 'outofrange';
+  }
+
+  card.className = 'param-card ' + dotCls;
+  statusEl.className = 'param-status ' + dotCls;
+  statusEl.textContent = label;
+
+  APP.currentInspection.details[tID] = { parameterName: tmpl ? tmpl.parameterName : tID, value: val, status: status };
+}
+
+function setYesNo(tID, val) {
+  document.querySelectorAll('#pc-' + tID + ' .yesno-btn').forEach(function(b) { b.classList.remove('selected'); });
+  var btn = document.querySelector('#pc-' + tID + ' .yesno-btn.' + val.toLowerCase());
+  if (btn) btn.classList.add('selected');
+  var tmpl = null;
+  for (var i = 0; i < APP.templates.length; i++) {
+    if (APP.templates[i].templateID === tID) { tmpl = APP.templates[i]; break; }
+  }
+  APP.currentInspection.details[tID] = { parameterName: tmpl ? tmpl.parameterName : tID, value: val, status: 'Normal' };
+  var card = document.getElementById('pc-' + tID);
+  var statusEl = document.getElementById('ps-' + tID);
+  if (card) card.className = 'param-card normal';
+  if (statusEl) { statusEl.className = 'param-status normal'; statusEl.textContent = '\u2713 Recorded'; }
+}
+
+function setTextParam(tID) {
+  var input = document.getElementById('pi-' + tID);
+  if (!input) return;
+  var tmpl = null;
+  for (var i = 0; i < APP.templates.length; i++) {
+    if (APP.templates[i].templateID === tID) { tmpl = APP.templates[i]; break; }
+  }
+  var card = document.getElementById('pc-' + tID);
+  var statusEl = document.getElementById('ps-' + tID);
+  if (input.value.trim()) {
+    APP.currentInspection.details[tID] = { parameterName: tmpl ? tmpl.parameterName : tID, value: input.value.trim(), status: 'Normal' };
+    if (card) card.className = 'param-card normal';
+    if (statusEl) { statusEl.className = 'param-status normal'; statusEl.textContent = '\u2713 Recorded'; }
+  } else {
+    APP.currentInspection.details[tID] = null;
+    if (card) card.className = 'param-card';
+    if (statusEl) statusEl.textContent = '';
+  }
+}
+
+function clearAllParams() {
+  if (!confirm('Clear all entered values?')) return;
+  APP.templates.forEach(function(t) {
+    var input = document.getElementById('pi-' + t.templateID);
+    if (input) input.value = '';
+    var card = document.getElementById('pc-' + t.templateID);
+    if (card) card.className = 'param-card';
+    var statusEl = document.getElementById('ps-' + t.templateID);
+    if (statusEl) { statusEl.className = 'param-status'; statusEl.textContent = ''; }
+    if (t.type === 'yesno') {
+      document.querySelectorAll('#pc-' + t.templateID + ' .yesno-btn').forEach(function(b) { b.classList.remove('selected'); });
+    }
+  });
+  APP.currentInspection.details = {};
+  var notes = document.getElementById('inspection-notes');
+  if (notes) notes.value = '';
+  updateCharCount();
+}
+
+async function saveInspection(status) {
+  var eq = APP.currentEquip;
+  var techSel = document.getElementById('form-tech-select');
+  var dateEl = document.getElementById('form-insp-date');
+  var notesEl = document.getElementById('inspection-notes');
+  var techID = techSel ? techSel.value : '';
+  var inspDate = dateEl ? dateEl.value : APP.selectedDate;
+  var notes = notesEl ? notesEl.value : '';
+
+  var details = Object.values(APP.currentInspection.details).filter(Boolean);
+
+  if (status === 'Completed' && APP.templates.length > 0) {
+    // Before checking, trigger evalParam for any filled inputs not yet registered
+    APP.templates.forEach(function(t) {
+      if (t.type === 'numeric' && !APP.currentInspection.details[t.templateID]) {
+        var input = document.getElementById('pi-' + t.templateID);
+        if (input && input.value !== '') {
+          var mn = (t.minValue !== '' && t.minValue !== null && t.minValue !== undefined) ? t.minValue : '';
+          var mx = (t.maxValue !== '' && t.maxValue !== null && t.maxValue !== undefined) ? t.maxValue : '';
+          evalParam(t.templateID, mn, mx);
+        }
+      }
+      if (t.type === 'text' && !APP.currentInspection.details[t.templateID]) {
+        var tinput = document.getElementById('pi-' + t.templateID);
+        if (tinput && tinput.value.trim() !== '') setTextParam(t.templateID);
+      }
+    });
+
+    var required = APP.templates.filter(function(t) { return t.required; });
+    var missing = required.filter(function(t) { return !APP.currentInspection.details[t.templateID]; });
+    if (missing.length > 0) {
+      showToast('Please fill in: ' + missing.map(function(t) { return t.parameterName; }).join(', '), 'warning');
+      return;
+    }
+  }
+
+  setLoading(true, status === 'Draft' ? 'Saving draft...' : 'Saving inspection...');
+  try {
+    var result = await gasCall('saveInspection', {
+      inspectionID: APP.currentInspection.inspectionID || null,
+      equipID: eq.equipID,
+      technicianID: techID,
+      inspectionDate: inspDate,
+      status: status,
+      notes: notes,
+      details: details
+    });
+    setLoading(false);
+    if (result.success) {
+      APP.currentInspection.inspectionID = result.inspectionID;
+      // Invalidate caches so next load gets fresh data
+      APP.cache.plantsTs = 0;
+      APP.cache.areasTs  = {};
+      APP.cache.checklistTs = {};
+      showToast(status === 'Draft' ? 'Draft saved.' : 'Inspection saved!', 'success');
+      if (status === 'Completed') {
+        setTimeout(async function() {
+          // Return to checklist if we came from there, else equipment screen
+          if (APP.checklist && APP.checklist.length > 0) {
+            await loadChecklistScreen(APP.currentPlant ? APP.currentPlant.plantID : null);
+          } else {
+            await loadEquipmentScreen();
+          }
+        }, 800);
+      }
+    } else {
+      showToast('Save failed: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch(e) {
+    setLoading(false);
+    showToast('Save error: ' + e.message, 'error');
+  }
+}
+
+function updateCharCount() {
+  var ta = document.getElementById('inspection-notes');
+  var cc = document.getElementById('char-count');
+  if (ta && cc) cc.textContent = ta.value.length + ' / 500';
+}
+
+// ── NAV & SIDEBAR ──────────────────────────────────────────────
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('open');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('open');
+}
+function toggleDropdown() {
+  document.getElementById('user-dropdown').classList.toggle('open');
+}
+function closeDropdown() {
+  var d = document.getElementById('user-dropdown');
+  if (d) d.classList.remove('open');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#user-dropdown') && !e.target.closest('.nav-user')) {
+    closeDropdown();
+  }
+});
+
+
+// ── CHECKLIST SCREEN ──────────────────────────────────────────
+
+var CL_GROUP_ICONS = {
+  // cycles
+  'Daily':       '📅', 'Weekly':     '📆', 'Bi-Weekly':  '🗓️',
+  'Semi-Monthly':'🗓️', 'Monthly':    '📅', 'Quarterly':  '📊',
+  'Semi-Annual': '📊', 'Annual':     '📋',
+  // categories
+  'HV Switchgear':'⚡', 'LV Switchgear':'🔋', 'Transformer':'🔌',
+  'Chiller':      '❄️', 'Cooling Tower':'🌡️', 'Pump':       '💧',
+  'AHU':          '💨', 'AHU Panel':   '💨', 'FCU Panel':  '❄️',
+  'Solar PV':     '☀️', 'Hygrometer':  '💧', 'CDA System': '🔧',
+  'General':      '⚙️'
+};
+
+async function loadChecklistScreen(plantID) {
+  if (plantID) {
+    for (var i = 0; i < APP.plants.length; i++) {
+      if (APP.plants[i].plantID === plantID) { APP.currentPlant = APP.plants[i]; break; }
+    }
+  }
+  showScreen('checklist');
+  setLoading(true, 'Loading checklist...');
+
+  // Reset filters
+  APP.clGroupBy    = 'cycle';
+  APP.clSearch     = '';
+  APP.clCycleFilter = 'All';
+
+  try {
+    var result = await gasCall('getChecklistByPlant', APP.currentPlant.plantID, APP.selectedDate);
+    if (result && result.error) throw new Error(result.error);
+    APP.checklist = result || [];
+    renderChecklistScreen();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load checklist: ' + e.message, 'error');
+  }
+}
+
+function renderChecklistScreen() {
+  // Header
+  var hEl = document.getElementById('cl-plant-name');
+  if (hEl) hEl.textContent = APP.currentPlant ? APP.currentPlant.plantName : '';
+  var dateEl = document.getElementById('cl-date');
+  if (dateEl) dateEl.textContent = formatDateShort(APP.selectedDate);
+
+  // Stats
+  var all       = APP.checklist;
+  var completed = all.filter(function(e){ return e.equipStatus === 'Completed Today'; }).length;
+  var pending   = all.filter(function(e){ return e.equipStatus === 'Pending'; }).length;
+  var overdue   = all.filter(function(e){ return e.equipStatus === 'Overdue'; }).length;
+
+  setText('cl-stat-total',     all.length);
+  setText('cl-stat-completed', completed);
+  setText('cl-stat-pending',   pending);
+  setText('cl-stat-overdue',   overdue);
+
+  // Render cycle slicer
+  renderCycleSlicer();
+
+  // Active tab highlight
+  document.querySelectorAll('.cl-tab').forEach(function(t) { t.classList.remove('active'); });
+  var activeTab = document.getElementById('cl-tab-' + APP.clGroupBy);
+  if (activeTab) activeTab.classList.add('active');
+
+  // Search bar value
+  var searchEl = document.getElementById('cl-search-input');
+  if (searchEl) searchEl.value = APP.clSearch;
+
+  renderChecklistBody();
+}
+
+function renderCycleSlicer() {
+  var slicer = document.getElementById('cl-slicer');
+  if (!slicer) return;
+
+  var CYCLE_ORDER = ['Daily','Weekly','Bi-Weekly','Semi-Monthly','Monthly','Quarterly','Semi-Annual','Annual'];
+
+  // Count pending per cycle (pending = not Completed Today)
+  var cycleCounts = {}; // cycle -> { pending, total, completed }
+  APP.checklist.forEach(function(eq) {
+    var c = eq.inspectionCycle || 'Daily';
+    if (!cycleCounts[c]) cycleCounts[c] = { pending: 0, total: 0, completed: 0 };
+    cycleCounts[c].total++;
+    if (eq.equipStatus === 'Completed Today') cycleCounts[c].completed++;
+    else cycleCounts[c].pending++;
+  });
+
+  // Build cycles list — only cycles that exist in data, sorted
+  var cycles = Object.keys(cycleCounts).sort(function(a, b) {
+    var ai = CYCLE_ORDER.indexOf(a); var bi = CYCLE_ORDER.indexOf(b);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
+
+  // Total pending across all cycles
+  var totalPending   = APP.checklist.filter(function(e){ return e.equipStatus !== 'Completed Today'; }).length;
+  var totalCompleted = APP.checklist.filter(function(e){ return e.equipStatus === 'Completed Today'; }).length;
+  var allDone        = totalPending === 0;
+
+  var html = '';
+
+  // "All" button
+  var allActive = APP.clCycleFilter === 'All' ? ' active' + (allDone ? ' done' : '') : (allDone ? ' done' : '');
+  html += '<button class="slicer-btn' + allActive + '" onclick="setCycleFilter(' + "'" + 'All' + "'" + ')">' +
+    'All' +
+    '<span class="slicer-count">' + (allDone ? '✓' : totalPending) + '<\/span>' +
+  '<\/button>';
+
+  // Per-cycle buttons
+  cycles.forEach(function(c) {
+    var cc = cycleCounts[c];
+    var isDone    = cc.pending === 0;
+    var isActive  = APP.clCycleFilter === c;
+    var cls = 'slicer-btn';
+    if (isActive) cls += ' active';
+    if (isDone)   cls += ' done';
+    if (cc.total === 0) cls += ' zero';
+
+    html += '<button class="' + cls + '" onclick="setCycleFilter(' + "'" + c + "'" + ')">' +
+      c +
+      '<span class="slicer-count">' + (isDone ? '✓ ' + cc.total : cc.pending + '\/' + cc.total) + '<\/span>' +
+    '<\/button>';
+  });
+
+  slicer.innerHTML = html;
+}
+
+function setCycleFilter(cycle) {
+  APP.clCycleFilter = cycle;
+  // Reset search when changing slicer
+  APP.clSearch = '';
+  var searchEl = document.getElementById('cl-search-input');
+  if (searchEl) searchEl.value = '';
+  renderCycleSlicer();
+  renderChecklistBody();
+}
+
+function renderChecklistBody() {
+  var body = document.getElementById('cl-body');
+  if (!body) return;
+
+  var search = APP.clSearch.toLowerCase().trim();
+  var items = APP.checklist.filter(function(e) {
+    if (!search) return true;
+    return e.equipmentName.toLowerCase().indexOf(search) >= 0 ||
+           (e.assetTag || '').toLowerCase().indexOf(search) >= 0 ||
+           (e.areaName || '').toLowerCase().indexOf(search) >= 0 ||
+           (e.category || '').toLowerCase().indexOf(search) >= 0;
+  });
+
+  if (items.length === 0) {
+    body.innerHTML = '<div class="cl-empty"><h3>No equipment found<\/h3><p>Try a different search term.<\/p><\/div>';
+    return;
+  }
+
+  // Flat list when searching
+  if (APP.clGroupBy === 'search' && search) {
+    body.innerHTML = '<div class="cl-group"><div class="cl-group-items">' +
+      items.map(function(e) { return renderClItem(e); }).join('') +
+    '<\/div><\/div>';
+    return;
+  }
+
+  // Group key function
+  function getGroupKey(e) {
+    if (APP.clGroupBy === 'cycle')    return e.inspectionCycle || 'Unknown';
+    if (APP.clGroupBy === 'area')     return e.areaName || 'Unknown';
+    if (APP.clGroupBy === 'category') return e.category || 'General';
+    return 'All';
+  }
+
+  var cycleOrder = ['Daily','Weekly','Bi-Weekly','Semi-Monthly','Monthly','Quarterly','Semi-Annual','Annual'];
+
+  var groupMap = {};
+  var groupOrder = [];
+  items.forEach(function(e) {
+    var key = getGroupKey(e);
+    if (!groupMap[key]) { groupMap[key] = []; groupOrder.push(key); }
+    groupMap[key].push(e);
+  });
+
+  if (APP.clGroupBy === 'cycle') {
+    groupOrder.sort(function(a, b) {
+      var ai = cycleOrder.indexOf(a); var bi = cycleOrder.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+  } else {
+    groupOrder.sort();
+  }
+
+  var html = '';
+  groupOrder.forEach(function(groupKey) {
+    var groupItems = groupMap[groupKey];
+    var gCompleted = groupItems.filter(function(e) { return e.equipStatus === 'Completed Today'; }).length;
+    var gPct       = Math.round((gCompleted / groupItems.length) * 100);
+    var pctCls     = gPct === 100 ? 'green' : gPct > 0 ? 'orange' : 'red';
+    var icon       = CL_GROUP_ICONS[groupKey] || '\u2699\uFE0F';
+    var gid        = 'clg-' + groupKey.replace(/[^a-zA-Z0-9]/g, '_');
+
+    html += '<div class="cl-group">';
+    html += '<div class="cl-group-header" onclick="toggleClGroup(' + "'" + gid + "'" + ')">';
+    html += '<span class="cl-group-icon">' + icon + '<\/span>';
+    html += '<span class="cl-group-name">' + escHtml(groupKey) + '<\/span>';
+    html += '<span class="cl-group-stats">';
+    html += '<span class="cl-group-count">' + gCompleted + '\/' + groupItems.length + '<\/span>';
+    html += '<span class="cl-group-pct ' + pctCls + '">' + gPct + '%<\/span>';
+    html += '<\/span>';
+    html += '<span class="cl-group-chevron">\u25BC<\/span>';
+    html += '<\/div>';
+    html += '<div class="cl-group-items" id="' + gid + '">';
+    groupItems.forEach(function(e) { html += renderClItem(e); });
+    html += '<\/div>';
+    html += '<\/div>';
+  });
+
+  body.innerHTML = html;
+}
+
+function renderClItem(e) {
+  var stCls   = e.equipStatus === 'Completed Today' ? 'completed' : e.equipStatus === 'Overdue' ? 'overdue' : 'pending';
+  var stLabel = e.equipStatus === 'Completed Today' ? 'Done' : e.equipStatus === 'Overdue' ? 'Overdue' : 'Pending';
+
+  var iconSvg;
+  if (stCls === 'completed') {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"><\/polyline><\/svg>';
+  } else if (stCls === 'overdue') {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"><\/circle><line x1="12" y1="8" x2="12" y2="12"><\/line><line x1="12" y1="16" x2="12.01" y2="16"><\/line><\/svg>';
+  } else {
+    iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"><\/circle><polyline points="12 6 12 12 16 14"><\/polyline><\/svg>';
+  }
+
+  var lastInsp = e.lastInspection ? 'Last: ' + formatDateShort(e.lastInspection) : 'Never inspected';
+
+  var metaParts = [];
+  if (APP.clGroupBy !== 'area')     metaParts.push(escHtml(e.areaName || ''));
+  if (APP.clGroupBy !== 'category') metaParts.push(escHtml(e.category || 'General'));
+  if (APP.clGroupBy !== 'cycle')    metaParts.push(escHtml(e.inspectionCycle || ''));
+
+  var metaHtml = metaParts.filter(Boolean).map(function(p, i) {
+    return (i > 0 ? '<span class="sep">\u00B7<\/span>' : '') + '<span>' + p + '<\/span>';
+  }).join('');
+  if (e.assetTag) {
+    metaHtml += '<span class="sep">\u00B7<\/span><span style="font-family:monospace">' + escHtml(e.assetTag) + '<\/span>';
+  }
+
+  var inspectBtn;
+  if (stCls === 'completed') {
+    inspectBtn = '<button class="cl-btn-inspect done" disabled>\u2713 Done<\/button>';
+  } else {
+    inspectBtn = '<button class="cl-btn-inspect" onclick="clInspect(' + "'" + e.equipID + "','" + e.areaID + "'" + ')">Inspect →<\/button>';
+  }
+
+  var html = '';
+  html += '<div class="cl-item ' + stCls + '">';
+  html += '<div class="cl-item-icon ' + stCls + '">' + iconSvg + '<\/div>';
+  html += '<div class="cl-item-info">';
+  html += '<div class="cl-item-name">' + escHtml(e.equipmentName) + '<\/div>';
+  html += '<div class="cl-item-meta">' + metaHtml + '<\/div>';
+  html += '<div class="cl-item-last">' + lastInsp + '<\/div>';
+  html += '<\/div>';
+  html += '<div class="cl-item-right">';
+  html += '<span class="cl-item-badge ' + stCls + '">' + stLabel + '<\/span>';
+  html += inspectBtn;
+  html += '<\/div>';
+  html += '<\/div>';
+  return html;
+}
+
+function toggleClGroup(gid) {
+  var items = document.getElementById(gid);
+  var header = items ? items.previousElementSibling : null;
+  if (!items) return;
+  items.classList.toggle('hidden');
+  if (header) header.classList.toggle('collapsed');
+}
+
+function setClGroupBy(mode) {
+  APP.clGroupBy = mode;
+  APP.clSearch  = '';
+  var searchEl = document.getElementById('cl-search-input');
+  if (searchEl) searchEl.value = '';
+  renderChecklistScreen();
+}
+
+function clSearch() {
+  var el = document.getElementById('cl-search-input');
+  APP.clSearch  = el ? el.value : '';
+  APP.clGroupBy = 'search';
+  // Activate search tab
+  document.querySelectorAll('.cl-tab').forEach(function(t) { t.classList.remove('active'); });
+  var st = document.getElementById('cl-tab-search');
+  if (st) st.classList.add('active');
+  renderChecklistBody();
+}
+
+function clClearSearch() {
+  APP.clSearch  = '';
+  APP.clGroupBy = 'cycle';
+  var el = document.getElementById('cl-search-input');
+  if (el) el.value = '';
+  renderChecklistScreen();
+}
+
+async function clInspect(equipID, areaID) {
+  // Load the area if not already current
+  if (!APP.currentArea || APP.currentArea.areaID !== areaID) {
+    // Find area from areas list or fetch
+    var found = null;
+    for (var i = 0; i < APP.areas.length; i++) {
+      if (APP.areas[i].areaID === areaID) { found = APP.areas[i]; break; }
+    }
+    if (!found) {
+      // Areas may not be loaded — fetch all for this plant
+      try {
+        var areas = await gasCall('getAreas', APP.currentPlant.plantID);
+        APP.areas = areas || [];
+        for (var j = 0; j < APP.areas.length; j++) {
+          if (APP.areas[j].areaID === areaID) { found = APP.areas[j]; break; }
+        }
+      } catch(e) {}
+    }
+    APP.currentArea = found || { areaID: areaID, areaName: '–' };
+  }
+
+  // Find equipment in checklist
+  var eq = null;
+  for (var k = 0; k < APP.checklist.length; k++) {
+    if (APP.checklist[k].equipID === equipID) { eq = APP.checklist[k]; break; }
+  }
+  if (!eq) { showToast('Equipment not found', 'error'); return; }
+
+  // Build equipWithStatus-compatible object
+  APP.currentEquip = {
+    equipID:         eq.equipID,
+    equipmentName:   eq.equipmentName,
+    assetTag:        eq.assetTag,
+    inspectionCycle: eq.inspectionCycle,
+    category:        eq.category,
+    areaID:          eq.areaID,
+    equipStatus:     eq.equipStatus,
+    lastInspection:  eq.lastInspection
+  };
+
+  APP.currentInspection = { details: {} };
+  showScreen('form');
+  setLoading(true, 'Loading form...');
+  try {
+    var results = await Promise.all([
+      gasCall('getTemplates', equipID),
+      gasCall('getTechnicians')
+    ]);
+    APP.templates    = results[0] || [];
+    APP.technicians  = results[1] || [];
+    renderInspectionForm();
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load form: ' + e.message, 'error');
+  }
+}
+
+// Helper
+function setText(id, val) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+// ── REPORT ────────────────────────────────────────────────────
+function openReport(areaID, equipID) {
+  // GAS sandbox blocks window.location changes, so get the real URL from server
+  gasCall('getWebAppUrl').then(function(baseUrl) {
+    var url = baseUrl + '?page=report';
+    if (areaID)  url += '&areaID='  + encodeURIComponent(areaID);
+    if (equipID) url += '&equipID=' + encodeURIComponent(equipID);
+    window.open(url, '_blank');
+  }).catch(function() {
+    // Fallback: try direct navigation
+    var url = window.top.location.href.split('?')[0] + '?page=report';
+    if (areaID)  url += '&areaID='  + encodeURIComponent(areaID);
+    window.open(url, '_blank');
+  });
+}
+
+
+// ── DASHBOARD SCREEN ──────────────────────────────────────────
+
+var DBSTATE = {
+  year: (function(){ var d=new Date(); return d.getFullYear(); })(),
+  data: null,
+  MONTHS:      ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'],
+  MONTHS_FULL: ['January','February','March','April','May','June','July','August','September','October','November','December'],
+  CYCLE_ORDER: ['Daily','Weekly','Bi-Weekly','Semi-Monthly','Monthly','Quarterly','Semi-Annual','Annual']
+};
+
+async function loadDashboardScreen() {
+  showScreen('dashboard');
+  buildDbYearBtns();
+  document.getElementById('db-title').textContent = 'Factory Inspection Record — ' + DBSTATE.year;
+  document.getElementById('db-export-btn').style.display = 'none';
+  document.getElementById('db-content').innerHTML =
+    '<div class="db-spinner-wrap"><div class="loading-spinner"></div>' +
+    '<p style="margin-top:12px;color:var(--gray-500)">Loading ' + DBSTATE.year + '...</p></div>';
+
+  try {
+    var data = await gasCall('getDashboardReport', DBSTATE.year);
+    if (!data || data.error) {
+      document.getElementById('db-content').innerHTML = '<p style="color:red;padding:20px">Error: ' + escHtml((data && data.error)||'Unknown') + '</p>';
+      return;
+    }
+    DBSTATE.data = data;
+    renderDbDashboard();
+    document.getElementById('db-export-btn').style.display = 'flex';
+  } catch(e) {
+    document.getElementById('db-content').innerHTML = '<p style="color:red;padding:20px">Error: ' + escHtml(e.message) + '</p>';
+  }
+}
+
+function buildDbYearBtns() {
+  var cur = new Date().getFullYear();
+  var html = '';
+  for (var y = cur - 1; y <= cur + 1; y++) {
+    html += '<button class="db-yr-btn' + (y === DBSTATE.year ? ' active' : '') + '" onclick="dbSetYear(' + y + ')">' + y + '</button>';
+  }
+  document.getElementById('db-year-btns').innerHTML = html;
+}
+
+function dbSetYear(y) {
+  DBSTATE.year = y;
+  DBSTATE.data = null;
+  loadDashboardScreen();
+}
+
+function renderDbDashboard() {
+  if (!DBSTATE.data) return;
+  var curMonth = new Date().getMonth();
+  var curYear  = new Date().getFullYear();
+  var areas    = DBSTATE.data.areas;
+
+  // Group by cycle → plant
+  var cycleGroups = {};
+  areas.forEach(function(area) {
+    if (!cycleGroups[area.cycle]) cycleGroups[area.cycle] = {};
+    if (!cycleGroups[area.cycle][area.plantName]) cycleGroups[area.cycle][area.plantName] = [];
+    cycleGroups[area.cycle][area.plantName].push(area);
+  });
+  var cycles = DBSTATE.CYCLE_ORDER.filter(function(c){ return cycleGroups[c]; });
+
+  var html = '';
+
+  cycles.forEach(function(cycle) {
+    var cyclePlants = cycleGroups[cycle];
+    var plantNames  = Object.keys(cyclePlants).sort();
+
+    html += '<div class="db-section">';
+    html += '<div class="db-section-title">';
+    html += '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+    html += cycle + ' Tasks</div>';
+    html += '<div class="db-table-wrap"><table class="db-table">';
+
+    // Header row
+    var mhdr = buildDbHeader(curMonth, curYear);
+    html += '<thead>' + mhdr + '</thead><tbody>';
+
+    var rowNum = 1;
+    plantNames.forEach(function(plantName) {
+      html += '<tr class="db-phase-row"><td colspan="16">' + escHtml(plantName) + '</td></tr>';
+      cyclePlants[plantName].forEach(function(area) {
+        html += '<tr class="db-data-row">';
+        html += '<td class="db-no">' + rowNum++ + '</td>';
+        html += '<td class="db-loc">' + escHtml(area.areaName) + '</td>';
+        html += '<td class="db-typ"><span class="db-badge-type">Internal</span></td>';
+        html += '<td class="db-cyc">' + escHtml(area.cycle) + '</td>';
+
+        area.months.forEach(function(mo, mi) {
+          html += '<td class="db-mon" onclick="openDbModal(' + "'" + area.areaID + "'," + mi + ')">';
+          if (mo.status === 'upcoming') {
+            html += '<div class="db-cell s-upcoming"><span class="db-cell-icon up">&mdash;</span></div>';
+          } else if (mo.status === 'completed') {
+            html += '<div class="db-cell s-completed"><span class="db-cell-icon ok">&#10003;</span></div>';
+          } else if (mo.status === 'none' || mo.status === 'partial') {
+            html += '<div class="db-cell s-none"><span class="db-cell-icon bad">&#10007;</span></div>';
+          } else {
+            html += '<div class="db-cell s-upcoming"><span class="db-cell-icon up">&mdash;</span></div>';
+          }
+          html += '</td>';
+        });
+        html += '</tr>';
+      });
+    });
+
+    html += '</tbody><tfoot>' + mhdr.replace(/<thead>/g,'').replace(/<\/thead>/g,'') + '</tfoot>';
+    html += '</table></div></div>';
+  });
+
+  if (!cycles.length) html = '<div style="text-align:center;padding:40px;color:var(--gray-400)">No data for ' + DBSTATE.year + '</div>';
+  document.getElementById('db-content').innerHTML = html;
+  document.getElementById('db-title').textContent = 'Factory Inspection Record — ' + DBSTATE.year;
+}
+
+function buildDbHeader(curMonth, curYear) {
+  var row = '<tr>';
+  row += '<th class="db-col-no">NO.</th>';
+  row += '<th class="db-col-loc">LOCATION</th>';
+  row += '<th class="db-col-typ">TYPE</th>';
+  row += '<th class="db-col-cyc">CYCLE</th>';
+  DBSTATE.MONTHS.forEach(function(m, i) {
+    var isCur = (i === curMonth && DBSTATE.year === curYear);
+    row += '<th class="db-col-mon' + (isCur ? ' db-cur-month' : '') + '">' + m + '</th>';
+  });
+  row += '</tr>';
+  return row;
+}
+
+// MODAL
+function openDbModal(areaID, monthIdx) {
+  var modal = document.getElementById('db-modal');
+  modal.style.display = 'flex';
+  document.getElementById('db-m-title').textContent = 'Loading...';
+  document.getElementById('db-m-sub').textContent   = '';
+  document.getElementById('db-m-pill').textContent  = '';
+  document.getElementById('db-m-stats').innerHTML   = '';
+  document.getElementById('db-m-grid').innerHTML    = '<div style="text-align:center;padding:20px"><div class="loading-spinner"></div></div>';
+
+  gasCall('getAreaMonthDetail', areaID, DBSTATE.year, monthIdx).then(function(data) {
+    if (!data || data.error) { document.getElementById('db-m-title').textContent = 'Error'; return; }
+
+    var areaName = areaID;
+    if (DBSTATE.data) DBSTATE.data.areas.forEach(function(a){ if (a.areaID === areaID) areaName = a.areaName; });
+
+    document.getElementById('db-m-title').textContent = areaName;
+    document.getElementById('db-m-sub').textContent   = DBSTATE.MONTHS_FULL[monthIdx] + ' ' + DBSTATE.year + ' — ' + data.cycle;
+
+    var missed = data.requiredCount - data.completedCount;
+    var pct    = data.requiredCount > 0 ? Math.round(data.completedCount / data.requiredCount * 100) : 0;
+    document.getElementById('db-m-pill').textContent = data.completedCount + ' / ' + data.requiredCount + ' days completed';
+
+    // Stats - use DOM manipulation instead of HTML strings
+    var statsEl = document.getElementById('db-m-stats');
+    statsEl.innerHTML = '';
+    var statItems = [
+      { val: data.completedCount, lbl: 'Completed', color: '#16a34a' },
+      { val: missed,              lbl: 'Missed',    color: '#dc2626' },
+      { val: data.requiredCount,  lbl: 'Required',  color: '#1f2937' },
+      { val: pct + '%',           lbl: 'Complete',  color: pct === 100 ? '#16a34a' : '#dc2626' }
+    ];
+    statItems.forEach(function(s) {
+      var card = document.createElement('div');
+      card.style.cssText = 'background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;padding:12px;text-align:center';
+      card.innerHTML = '<div style="font-size:22px;font-weight:700;color:' + s.color + '">' + s.val + '</div>' +
+        '<div style="font-size:11px;color:#6b7280;margin-top:2px;font-weight:600">' + s.lbl + '</div>';
+      statsEl.appendChild(card);
+    });
+
+    // Day grid
+    var gridEl = document.getElementById('db-m-grid');
+    gridEl.innerHTML = '';
+    var DOW = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+    DOW.forEach(function(d) {
+      var hdr = document.createElement('div');
+      hdr.style.cssText = 'text-align:center;font-size:10px;font-weight:700;color:#9ca3af;padding:4px 0';
+      hdr.textContent = d;
+      gridEl.appendChild(hdr);
+    });
+
+    // Empty offset
+    var firstDow = new Date(DBSTATE.year, monthIdx, 1).getDay();
+    for (var i = 0; i < firstDow; i++) {
+      gridEl.appendChild(document.createElement('div'));
+    }
+
+    data.days.forEach(function(d) {
+      var cell = document.createElement('div');
+      var bg = 'white', border = '#e5e7eb', numColor = '#d1d5db', icon = '', techStr = '';
+
+      if (d.required) {
+        if (d.future) {
+          bg = '#f9fafb'; border = '#f3f4f6'; numColor = '#9ca3af';
+          icon = '<div style="font-size:12px;color:#d1d5db;margin-top:3px">&#9679;</div>';
+        } else if (d.done) {
+          bg = '#dcfce7'; border = '#86efac'; numColor = '#16a34a';
+          icon = '<div style="font-size:16px;font-weight:700;color:#16a34a;margin-top:3px">&#10003;</div>';
+          if (d.techs && d.techs.length) {
+            techStr = '<div style="font-size:9px;color:#16a34a;font-weight:600;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              escHtml(d.techs[0].substring(0,8)) + '</div>';
+          }
+        } else {
+          bg = '#fee2e2'; border = '#fca5a5'; numColor = '#dc2626';
+          icon = '<div style="font-size:16px;font-weight:700;color:#dc2626;margin-top:3px">&#10007;</div>';
+        }
+      }
+
+      cell.style.cssText = 'border-radius:8px;padding:7px 4px 6px;text-align:center;border:1.5px solid ' + border + ';background:' + bg;
+      cell.innerHTML = '<div style="font-size:13px;font-weight:700;color:' + numColor + '">' +
+        String(d.day).padStart(2,'0') + '</div>' + icon + techStr;
+      gridEl.appendChild(cell);
+    });
+  }).catch(function(e) {
+    document.getElementById('db-m-title').textContent = 'Error: ' + escHtml(e.message);
+  });
+}
+
+function closeDbModal() {
+  document.getElementById('db-modal').style.display = 'none';
+}
+
+document.addEventListener('click', function(e) {
+  if (e.target.id === 'db-modal') closeDbModal();
+});
+
+
+// CSV Export
+function dbExportCSV() {
+  if (!DBSTATE.data) return;
+  var areas = DBSTATE.data.areas;
+  var rows  = [];
+  rows.push(['Factory Inspection Record — ' + DBSTATE.year]);
+  rows.push([]);
+  rows.push(['NO.','LOCATION','TYPE','CYCLE'].concat(DBSTATE.MONTHS));
+
+  var cycleGroups = {};
+  areas.forEach(function(area) {
+    if (!cycleGroups[area.cycle]) cycleGroups[area.cycle] = {};
+    if (!cycleGroups[area.cycle][area.plantName]) cycleGroups[area.cycle][area.plantName] = [];
+    cycleGroups[area.cycle][area.plantName].push(area);
+  });
+
+  DBSTATE.CYCLE_ORDER.filter(function(c){ return cycleGroups[c]; }).forEach(function(cycle) {
+    rows.push([cycle + ' Tasks']);
+    var rowNum = 1;
+    Object.keys(cycleGroups[cycle]).sort().forEach(function(plantName) {
+      rows.push(['',plantName]);
+      cycleGroups[cycle][plantName].forEach(function(area) {
+        var row = [rowNum++, area.areaName, 'Internal', area.cycle];
+        area.months.forEach(function(mo) {
+          if (mo.status === 'upcoming')   row.push('—');
+          else if (mo.status === 'completed') row.push('✓ ' + mo.completed + '/' + mo.total);
+          else {
+            var cell = '✗ ' + mo.completed + '/' + mo.total;
+            if (mo.missedDays && mo.missedDays.length) cell += ' | Missed: ' + mo.missedDays.join(', ');
+            row.push(cell);
+          }
+        });
+        rows.push(row);
+      });
+    });
+    rows.push([]);
+  });
+
+  var csv = rows.map(function(row) {
+    return row.map(function(cell) {
+      var s = String(cell===null||cell===undefined?'':cell);
+      if (s.indexOf(',')>=0||s.indexOf('"')>=0||s.indexOf('\n')>=0) s='"'+s.replace(/"/g,'""')+'"';
+      return s;
+    }).join(',');
+  }).join('\r\n');
+
+  var blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href=url; a.download='Inspection_Record_'+DBSTATE.year+'.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+
+// ═══════════════════════════════════════════════════════════
+// FIRE EXTINGUISHER TRACKING SYSTEM — Frontend JS
+// ═══════════════════════════════════════════════════════════
+
+var FE = {
+  data:          [],
+  building:      'P1',
+  floor:         'Ground',
+  moveMode:      false,
+  pendingChanges:{},
+  currentFilter: 'all',
+  isDragging:    false,
+  hasMoved:      false,
+  activeMarker:  null,
+  activeData:    null
+};
+
+// ── LOAD DATA ─────────────────────────────────────────────
+async function feLoadData() {
+  try {
+    var result = await gasCall('getFireExtinguishers');
+    FE.data = result || [];
+    return FE.data;
+  } catch(e) {
+    showToast('FE load error: ' + escHtml(e.message), 'error');
+    return [];
+  }
+}
+
+// ── FE DASHBOARD ──────────────────────────────────────────
+async function loadFEDashboard() {
+  showScreen('fe-dashboard');
+  setLoading(true, 'Loading FE data...');
+  try {
+    await feLoadData();
+    var stats = await gasCall('getFEDashboardStats');
+    setLoading(false);
+    feRenderDashboardKPI(stats);
+    feRenderTable();
+    // Update month label
+    var el = document.getElementById('fe-month-label');
+    var now = new Date();
+    if (el) el.textContent = now.toLocaleDateString('en-MY', { month:'long', year:'numeric' }) + ' inspection status';
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function feRenderDashboardKPI(stats) {
+  setText('fe-kpi-total',     stats.total     || 0);
+  setText('fe-kpi-completed', stats.completed || 0);
+  setText('fe-kpi-pending',   stats.pending   || 0);
+
+  var pct    = stats.total > 0 ? (stats.completed / stats.total * 100).toFixed(1) : 0;
+  var pctEl  = document.getElementById('fe-kpi-pct');
+  var lblEl  = document.getElementById('fe-kpi-pct-label');
+  var card   = document.getElementById('fe-kpi-completion-card');
+  if (pctEl)  pctEl.textContent = pct + '%';
+
+  if (card) {
+    card.className = 'fe-kpi-card';
+    if (pct >= 95)      { card.classList.add('fe-excellent'); if (lblEl) lblEl.textContent = 'Excellent'; }
+    else if (pct >= 80) { card.className += ' fe-warning';   if (lblEl) lblEl.textContent = 'Attention'; }
+    else                { card.classList.add('fe-failed');    if (lblEl) lblEl.textContent = 'Critical'; }
+  }
+}
+
+function feSetFilter(filter) {
+  FE.currentFilter = filter;
+  document.querySelectorAll('.fe-chip').forEach(function(b) { b.classList.remove('active'); });
+  var el = document.getElementById('fe-chip-' + filter);
+  if (el) el.classList.add('active');
+  feRenderTable();
+}
+
+function feRenderTable() {
+  var tbody = document.getElementById('fe-table-body');
+  if (!tbody) return;
+  var rows = FE.data.filter(function(x) {
+    if (FE.currentFilter === 'completed') return x.inspected;
+    if (FE.currentFilter === 'pending')   return !x.inspected;
+    return true;
+  });
+  tbody.innerHTML = rows.map(function(x) {
+    var badge = x.inspected
+      ? '<span class="fe-badge-completed">Completed</span>'
+      : '<span class="fe-badge-pending">Pending</span>';
+    return '<tr>' +
+      '<td style="font-weight:600">' + escHtml(x.feId) + '</td>' +
+      '<td>' + escHtml(x.building) + '</td>' +
+      '<td>' + escHtml(x.floor) + '</td>' +
+      '<td>' + escHtml(x.location) + '</td>' +
+      '<td>' + escHtml(x.type) + '</td>' +
+      '<td>' + badge + '</td>' +
+    '</tr>';
+  }).join('');
+}
+
+// ── FE MAP ────────────────────────────────────────────────
+async function loadFEMap() {
+  showScreen('fe-map');
+  if (!FE.data.length) { setLoading(true, 'Loading map...'); await feLoadData(); setLoading(false); }
+  feRenderFloors();
+  feRenderMap();
+}
+
+function feSetBuilding(b) {
+  FE.building = b;
+  document.querySelectorAll('.fe-building-chip').forEach(function(btn) { btn.classList.remove('active'); });
+  var el = document.getElementById('fe-b-' + b);
+  if (el) el.classList.add('active');
+  feRenderFloors();
+  feRenderMap();
+}
+
+function feRenderFloors() {
+  var wrap = document.getElementById('fe-floors');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  var floors = FE.building === 'P1'
+    ? [{ label:'Ground', value:'Ground' }, { label:'1st Floor', value:'1st Floor' }]
+    : [{ label:'Ground', value:'Ground' }, { label:'Mezzanine', value:'Mezzanine' },
+       { label:'1st Floor', value:'1st Floor' }, { label:'2nd Floor', value:'2nd Floor' }, { label:'Roof', value:'Roof' }];
+
+  if (!floors.find(function(f) { return f.value === FE.floor; })) FE.floor = floors[0].value;
+
+  floors.forEach(function(f) {
+    var btn = document.createElement('button');
+    btn.className = 'fe-floor-chip' + (f.value === FE.floor ? ' active' : '');
+    btn.textContent = f.label;
+    btn.onclick = function() { FE.floor = f.value; feRenderFloors(); feRenderMap(); };
+    wrap.appendChild(btn);
+  });
+}
+
+function feGetMapImage() {
+  var maps = {
+    'P1|Ground':    'https://i.ibb.co/wZt8Bzs8/p1-gf.png',
+    'P1|1st Floor': 'https://i.ibb.co/Y7RMwdX4/p1-1f.png',
+    'P2|Ground':    'https://i.ibb.co/p6LqBnG0/p2-gf.png',
+    'P2|Mezzanine': 'https://i.ibb.co/KcJFyJHW/p2-mezz.png',
+    'P2|1st Floor': 'https://i.ibb.co/DgPwg3DN/p2-1f.png',
+    'P2|2nd Floor': 'https://i.ibb.co/C3YCbFC3/p2-2f.png',
+    'P2|Roof':      'https://i.ibb.co/BKgdY8SK/p2-roof.png'
+  };
+  return maps[FE.building + '|' + FE.floor] || maps['P1|Ground'];
+}
+
+function feRenderMap() {
+  var mapEl = document.getElementById('fe-map-img');
+  if (!mapEl) return;
+
+  mapEl.onload = function() {
+    setTimeout(function() {
+      var layer = document.getElementById('fe-map-layer');
+      layer.innerHTML = '';
+      var rect = mapEl.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) { feRenderMap(); return; }
+      var scaleX = rect.width  / (mapEl.naturalWidth  || rect.width);
+      var scaleY = rect.height / (mapEl.naturalHeight || rect.height);
+      var rows   = FE.data.filter(function(x) { return x.building === FE.building && x.floor === FE.floor; });
+      rows.forEach(function(x) { feCreateMarker(x, scaleX, scaleY, layer, rect); });
+    }, 300);
+  };
+  mapEl.src = feGetMapImage();
+}
+
+function feCreateMarker(x, scaleX, scaleY, layer, rect) {
+  x.x = Math.max(20, Math.min(Number(x.x) || 120, rect.width  * 3));
+  x.y = Math.max(20, Math.min(Number(x.y) || 120, rect.height * 3));
+
+  var marker = document.createElement('div');
+  marker.className = 'fe-marker';
+  marker.style.left = (x.x * scaleX) + 'px';
+  marker.style.top  = (x.y * scaleY) + 'px';
+  marker.style.cursor = FE.moveMode ? 'grab' : 'pointer';
+
+  // Label
+  var label = document.createElement('div');
+  label.className = 'fe-label';
+  label.innerHTML = '<div style="font-weight:700;font-size:11px">' + escHtml(x.feId) + '</div>' +
+    '<div style="font-size:10px;opacity:.9">' + escHtml(x.location) + '</div>';
+  label.style.display = FE.moveMode ? 'block' : 'none';
+
+  // Icon
+  var img = document.createElement('img');
+  img.className = 'fe-icon';
+  img.draggable = false;
+  if (x.inspected) {
+    img.src = x.type === 'CO2' ? 'https://i.ibb.co/ksxNzhN2/green-co2.png' : 'https://i.ibb.co/Y7psLRn7/green-abc.png';
+  } else {
+    img.src = x.type === 'CO2' ? 'https://i.ibb.co/YFcVWZ1m/red-co2.png' : 'https://i.ibb.co/XrfNSc1B/red-abc.png';
+  }
+
+  // Click
+  marker.onclick = function(e) {
+    if (FE.hasMoved) { FE.hasMoved = false; return; }
+    if (FE.moveMode) feShowEditSheet(x);
+    else             feShowInspectSheet(x);
+  };
+
+  // Drag
+  marker.onpointerdown = function(e) {
+    if (!FE.moveMode) return;
+    e.preventDefault();
+    FE.isDragging  = true;
+    FE.hasMoved    = false;
+    FE.activeMarker = marker;
+    FE.activeData   = x;
+    marker.style.zIndex = '9999';
+    marker.style.cursor = 'grabbing';
+  };
+
+  marker.appendChild(label);
+  marker.appendChild(img);
+  layer.appendChild(marker);
+}
+
+// Global drag handlers
+document.addEventListener('pointermove', function(e) {
+  if (!FE.isDragging || !FE.activeMarker) return;
+  e.preventDefault();
+  var mapEl = document.getElementById('fe-map-img');
+  if (!mapEl) return;
+  var rect  = mapEl.getBoundingClientRect();
+  var left  = Math.max(20, Math.min(e.clientX - rect.left,  rect.width  - 20));
+  var top   = Math.max(20, Math.min(e.clientY - rect.top,   rect.height - 20));
+  FE.activeMarker.style.left = left + 'px';
+  FE.activeMarker.style.top  = top  + 'px';
+  FE.hasMoved = true;
+});
+
+document.addEventListener('pointerup', function(e) {
+  if (!FE.isDragging || !FE.activeMarker || !FE.activeData) return;
+  FE.isDragging = false;
+  var mapEl = document.getElementById('fe-map-img');
+  if (!mapEl) return;
+  var rect   = mapEl.getBoundingClientRect();
+  var left   = parseFloat(FE.activeMarker.style.left);
+  var top    = parseFloat(FE.activeMarker.style.top);
+  var realX  = Math.round((left  / rect.width)  * (mapEl.naturalWidth  || rect.width));
+  var realY  = Math.round((top   / rect.height) * (mapEl.naturalHeight || rect.height));
+  FE.activeData.x = realX;
+  FE.activeData.y = realY;
+  FE.pendingChanges[FE.activeData.feId] = { x: realX, y: realY };
+  FE.activeMarker.style.zIndex = '';
+  FE.activeMarker.style.cursor = 'grab';
+  FE.activeMarker = null;
+  FE.activeData   = null;
+  // Show save button
+  var saveBtn = document.getElementById('fe-save-btn');
+  if (saveBtn) saveBtn.style.display = 'flex';
+});
+
+function feToggleMove() {
+  FE.moveMode = !FE.moveMode;
+  var btn = document.getElementById('fe-move-btn');
+  if (btn) btn.style.background = FE.moveMode ? '#ea580c' : '#1a56db';
+  document.querySelectorAll('.fe-label').forEach(function(el) {
+    el.style.display = FE.moveMode ? 'block' : 'none';
+  });
+  document.querySelectorAll('.fe-marker').forEach(function(el) {
+    el.style.cursor = FE.moveMode ? 'grab' : 'pointer';
+  });
+}
+
+async function feSaveAllPositions() {
+  var ids = Object.keys(FE.pendingChanges);
+  if (!ids.length) { showToast('No changes to save', 'info'); return; }
+  setLoading(true, 'Saving positions...');
+  try {
+    for (var i = 0; i < ids.length; i++) {
+      await gasCall('updateFEPosition', ids[i], FE.pendingChanges[ids[i]].x, FE.pendingChanges[ids[i]].y);
+    }
+    FE.pendingChanges = {};
+    var saveBtn = document.getElementById('fe-save-btn');
+    if (saveBtn) saveBtn.style.display = 'none';
+    setLoading(false);
+    showToast('Positions saved', 'success');
+    await feLoadData();
+    feRenderMap();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// ── SHEETS (info/edit popups) ─────────────────────────────
+function feShowInspectSheet(x) {
+  var sheet = document.getElementById('fe-sheet');
+  sheet.className = 'fe-sheet open';
+  sheet.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div class="fe-sheet-title">' + escHtml(x.feId) + '</div>' +
+      '<button onclick="feCloseSheet()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-400)">&#10005;</button>' +
+    '</div>' +
+    '<div class="fe-sheet-sub">' + escHtml(x.location) + '</div>' +
+    '<div style="margin-top:10px;font-size:13px;color:var(--gray-600)">' +
+      '<div><strong>Building:</strong> ' + escHtml(x.building) + '</div>' +
+      '<div><strong>Floor:</strong> '    + escHtml(x.floor)    + '</div>' +
+      '<div><strong>Type:</strong> '     + escHtml(x.type)     + '</div>' +
+      '<div style="margin-top:8px"><strong>Status:</strong> ' +
+        (x.inspected ? '<span class="fe-badge-completed">Inspected this month</span>' : '<span class="fe-badge-pending">Not yet inspected</span>') +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:16px;display:flex;gap:8px">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="feCloseSheet();feStartInspection(' + "'" + x.feId + "'" + ')">Inspect</button>' +
+    '</div>';
+}
+
+function feShowEditSheet(x) {
+  var sheet = document.getElementById('fe-sheet');
+  sheet.className = 'fe-sheet open';
+  sheet.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
+      '<div class="fe-sheet-title">Edit FE</div>' +
+      '<button onclick="feCloseSheet()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-400)">&#10005;</button>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">Building</label>' +
+      '<select class="form-input" id="fe-edit-building"><option value="P1">P1</option><option value="P2">P2</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Floor</label>' +
+      '<select class="form-input" id="fe-edit-floor">' +
+        '<option value="Ground">Ground</option><option value="1st Floor">1st Floor</option>' +
+        '<option value="Mezzanine">Mezzanine</option><option value="2nd Floor">2nd Floor</option><option value="Roof">Roof</option>' +
+      '</select></div>' +
+    '<div class="form-group"><label class="form-label">Location</label>' +
+      '<input class="form-input" id="fe-edit-location" value="' + escHtml(x.location) + '"></div>' +
+    '<button class="btn btn-primary" style="width:100%" onclick="feSaveEditDetails(' + "'" + x.feId + "'" + ')">Save Changes</button>';
+
+  document.getElementById('fe-edit-building').value = x.building;
+  document.getElementById('fe-edit-floor').value    = x.floor;
+}
+
+function feCloseSheet() {
+  var el = document.getElementById('fe-sheet');
+  if (el) el.className = 'fe-sheet';
+}
+
+async function feSaveEditDetails(feId) {
+  var building = document.getElementById('fe-edit-building').value;
+  var floor    = document.getElementById('fe-edit-floor').value;
+  var location = document.getElementById('fe-edit-location').value;
+  setLoading(true, 'Saving...');
+  try {
+    await gasCall('updateFEDetails', feId, building, floor, location);
+    setLoading(false);
+    feCloseSheet();
+    showToast('FE updated', 'success');
+    await feLoadData();
+    feRenderMap();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// ── FE INSPECTION FORM ────────────────────────────────────
+function feStartInspection(feId) {
+  var fe = null;
+  for (var i = 0; i < FE.data.length; i++) { if (FE.data[i].feId === feId) { fe = FE.data[i]; break; } }
+  if (!fe) { showToast('FE not found', 'error'); return; }
+
+  var page = document.getElementById('screen-fe-inspect');
+  page.className = 'open';
+  document.getElementById('fe-inspect-title').textContent = fe.feId;
+  document.getElementById('fe-inspect-sub').textContent   = fe.location + ' | ' + fe.building + ' ' + fe.floor;
+
+  var gaugeField = fe.type === 'CO2'
+    ? '<div class="fe-choice-row">' +
+        '<button type="button" class="fe-choice-btn active" disabled>N/A (CO2)</button>' +
+      '</div><input type="hidden" id="fei-pressureGauge" value="N/A (CO2)">'
+    : '<div class="fe-choice-row">' +
+        '<button type="button" class="fe-choice-btn active" onclick="feChoice(this,' + "'fei-pressureGauge','Good'" + ')">Good</button>' +
+        '<button type="button" class="fe-choice-btn" onclick="feChoice(this,' + "'fei-pressureGauge','Low Pressure'" + ')">Low Pressure</button>' +
+        '<button type="button" class="fe-choice-btn" onclick="feChoice(this,' + "'fei-pressureGauge','Over Pressure'" + ')">Over Pressure</button>' +
+      '</div><input type="hidden" id="fei-pressureGauge" value="Good">';
+
+  document.getElementById('fe-inspect-content').innerHTML =
+    '<div class="fe-info-card">' +
+      '<div style="font-size:16px;font-weight:700;margin-bottom:8px">' + escHtml(fe.feId) + '</div>' +
+      '<div style="font-size:13px;color:var(--gray-600)">&#128205; ' + escHtml(fe.location) + '</div>' +
+      '<div style="font-size:13px;color:var(--gray-600)">&#127968; ' + escHtml(fe.building) + ' &rsaquo; ' + escHtml(fe.floor) + '</div>' +
+      '<div style="font-size:13px;color:var(--gray-600)">&#129519; ' + escHtml(fe.type) + '</div>' +
+    '</div>' +
+    feCheckCard('Physical Condition', 'fei-physicalCondition', [['Good','Good'],['Not Good','Not Good']]) +
+    feCheckCard('Rivet Pin', 'fei-rivetPin', [['Present','Present'],['Missing','Missing']]) +
+    '<div class="fe-check-card"><div class="fe-check-title">Pressure Gauge</div>' + gaugeField + '</div>' +
+    feCheckCard('Discharge Hose / Nozzle', 'fei-dischargeHose', [['Good','Good'],['Damaged','Damaged'],['Missing','Missing']]) +
+    feCheckCard('Handle', 'fei-handleCondition', [['Good','Good'],['Damaged','Damaged']]) +
+    feCheckCard('Label', 'fei-labelCondition', [['Clear','Clear'],['Faded','Faded'],['Missing','Missing']]) +
+    feCheckCard('Visibility', 'fei-visibility', [['Visible','Visible'],['Obstructed','Obstructed']]) +
+    '<div class="fe-check-card"><div class="fe-check-title">Remarks</div>' +
+      '<textarea id="fei-remarks" class="form-input" style="min-height:80px;resize:vertical" placeholder="Optional remarks..."></textarea>' +
+    '</div>' +
+    '<button class="btn btn-primary" style="width:100%;margin-top:4px;padding:14px" onclick="feSubmitInspection(' + "'" + fe.feId + "'" + ')">Submit Inspection</button>' +
+    '<div style="height:30px"></div>';
+}
+
+function feCheckCard(title, fieldId, options) {
+  var btns = options.map(function(o, i) {
+    return '<button type="button" class="fe-choice-btn' + (i === 0 ? ' active' : '') + '" ' +
+      'onclick="feChoice(this,' + "'" + fieldId + "','" + o[1] + "'" + ')">' + o[0] + '</button>';
+  }).join('');
+  return '<div class="fe-check-card">' +
+    '<div class="fe-check-title">' + title + '</div>' +
+    '<div class="fe-choice-row">' + btns + '</div>' +
+    '<input type="hidden" id="' + fieldId + '" value="' + options[0][1] + '">' +
+  '</div>';
+}
+
+function feChoice(btn, fieldId, value) {
+  btn.parentElement.querySelectorAll('.fe-choice-btn').forEach(function(b) { b.classList.remove('active'); });
+  btn.classList.add('active');
+  var el = document.getElementById(fieldId);
+  if (el) el.value = value;
+}
+
+async function feSubmitInspection(feId) {
+  var get = function(id) { var el = document.getElementById(id); return el ? el.value : ''; };
+  var techName = APP.session ? APP.session.name : '';
+  setLoading(true, 'Saving inspection...');
+  try {
+    var result = await gasCall('saveFEInspection', feId,
+      get('fei-physicalCondition'), get('fei-rivetPin'), get('fei-pressureGauge'),
+      get('fei-dischargeHose'), get('fei-handleCondition'), get('fei-labelCondition'),
+      get('fei-visibility'), get('fei-remarks'), techName
+    );
+    setLoading(false);
+    if (result && result.success) {
+      showToast('Inspection saved!', 'success');
+      closeFEInspect();
+      feCloseSheet();
+      await feLoadData();
+      feRenderTable();
+      feRenderMap();
+    } else {
+      showToast((result && result.error) || 'Save failed', 'error');
+    }
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function closeFEInspect() {
+  var el = document.getElementById('screen-fe-inspect');
+  if (el) el.className = '';
+}
+
+// ── FE ADD MODAL ──────────────────────────────────────────
+function feOpenAddModal() { document.getElementById('fe-add-modal').style.display = 'flex'; }
+function feCloseAddModal() { document.getElementById('fe-add-modal').style.display = 'none'; }
+
+async function feSaveNewFE() {
+  var feId     = document.getElementById('fe-new-id').value.trim();
+  var building = document.getElementById('fe-new-building').value;
+  var floor    = document.getElementById('fe-new-floor').value;
+  var location = document.getElementById('fe-new-location').value.trim();
+  var type     = document.getElementById('fe-new-type').value;
+  if (!feId) { showToast('Please enter FE ID', 'error'); return; }
+  setLoading(true, 'Adding FE...');
+  try {
+    await gasCall('addFireExtinguisherCustom', feId, building, floor, location, 50, 50, type);
+    setLoading(false);
+    feCloseAddModal();
+    showToast('FE added successfully', 'success');
+    document.getElementById('fe-new-id').value = '';
+    document.getElementById('fe-new-location').value = '';
+    await feLoadData();
+    feRenderTable();
+    feRenderMap();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// ── FE REPORT ─────────────────────────────────────────────
+async function loadFEReport() {
+  showScreen('fe-report');
+  setLoading(true, 'Loading report...');
+  try {
+    if (!FE.data.length) await feLoadData();
+    var stats = await gasCall('getFEDashboardStats');
+    setLoading(false);
+    feRenderReportKPI(stats);
+    feRenderBuildingSummary();
+    feRenderTypeSummary();
+    feRenderMonthlyTable();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function feRenderReportKPI(stats) {
+  setText('fer-total',     stats.total     || 0);
+  setText('fer-completed', stats.completed || 0);
+  setText('fer-pending',   stats.pending   || 0);
+  var pct  = stats.total > 0 ? (stats.completed / stats.total * 100).toFixed(1) : 0;
+  var fill = document.getElementById('fer-progress-fill');
+  var txt  = document.getElementById('fer-progress-text');
+  var pctEl = document.getElementById('fer-pct');
+  if (fill)  { fill.style.width = pct + '%'; fill.textContent = pct + '%'; }
+  if (txt)   txt.textContent = pct + '% Completed';
+  if (pctEl) pctEl.textContent = pct + '%';
+  var card = document.getElementById('fer-pct-card');
+  var lbl  = document.getElementById('fer-pct-label');
+  if (card) {
+    card.className = 'fe-kpi-card';
+    if (pct >= 95)      { card.classList.add('fe-excellent'); if (lbl) lbl.textContent = 'Excellent'; }
+    else if (pct >= 80) { card.className += ' fe-warning';   if (lbl) lbl.textContent = 'Attention'; }
+    else                { card.classList.add('fe-failed');    if (lbl) lbl.textContent = 'Critical'; }
+  }
+}
+
+function feRenderBuildingSummary() {
+  var tbody = document.getElementById('fer-building-body');
+  if (!tbody) return;
+  var buildings = {};
+  FE.data.forEach(function(x) {
+    if (!buildings[x.building]) buildings[x.building] = { total: 0, completed: 0 };
+    buildings[x.building].total++;
+    if (x.inspected) buildings[x.building].completed++;
+  });
+  tbody.innerHTML = Object.keys(buildings).map(function(b) {
+    var t = buildings[b].total, c = buildings[b].completed, p = t - c;
+    var pct = (c / t * 100).toFixed(1);
+    return '<tr><td>' + b + '</td><td>' + t + '</td><td>' + c + '</td><td>' + p + '</td><td>' + pct + '%</td></tr>';
+  }).join('');
+}
+
+function feRenderTypeSummary() {
+  var tbody = document.getElementById('fer-type-body');
+  if (!tbody) return;
+  var types = {};
+  FE.data.forEach(function(x) { types[x.type] = (types[x.type] || 0) + 1; });
+  tbody.innerHTML = Object.keys(types).map(function(t) {
+    return '<tr><td>' + t + '</td><td>' + types[t] + '</td></tr>';
+  }).join('');
+}
+
+function feRenderMonthlyTable() {
+  var tbody = document.getElementById('fer-monthly-body');
+  if (!tbody) return;
+  var groups = {};
+  FE.data.forEach(function(fe) {
+    var key = fe.building + '|' + fe.floor;
+    if (!groups[key]) groups[key] = { building: fe.building, floor: fe.floor, total: 0, completed: 0 };
+    groups[key].total++;
+    if (fe.inspected) groups[key].completed++;
+  });
+  tbody.innerHTML = Object.values(groups).map(function(r) {
+    var pending = r.total - r.completed;
+    var pct = (r.completed / r.total * 100).toFixed(1);
+    return '<tr><td>' + r.building + '</td><td>' + r.floor + '</td><td>' + r.total + '</td>' +
+      '<td>' + r.completed + '</td><td>' + pending + '</td><td>' + pct + '%</td></tr>';
+  }).join('');
+}
+
+async function feGeneratePDF() {
+  var monthSel = document.getElementById('fer-month-sel');
+  var yearSel  = document.getElementById('fer-year-sel');
+  var month = monthSel ? parseInt(monthSel.value) : new Date().getMonth() + 1;
+  var year  = yearSel  ? parseInt(yearSel.value)  : new Date().getFullYear();
+
+  setLoading(true, 'Building PDF...');
+  try {
+    // Get historical data for selected period
+    var data = await gasCall('getFEHistoricalReport', month, year);
+    setLoading(false);
+    if (!data || data.error) { showToast('Error: ' + ((data && data.error) || 'Unknown'), 'error'); return; }
+    feOpenPrintPDF(data, month, year);
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function feOpenPrintPDF(data, month, year) {
+  var MONTHS = ['','January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+  var now = new Date();
+  var generatedStr = now.toLocaleDateString('en-MY', {day:'2-digit',month:'long',year:'numeric'});
+
+  // Build table rows from records
+  var tableRows = '';
+  if (data.records && data.records.length) {
+    // Group by building+floor for subtotals
+    data.records.forEach(function(r, i) {
+      var rowNum = i + 1;
+      var statusStyle = r.status === 'FAIL'
+        ? 'color:#dc2626;font-weight:700'
+        : r.status === 'ATTENTION'
+        ? 'color:#d97706;font-weight:700'
+        : 'color:#16a34a;font-weight:700';
+      var dateStr = r.date ? new Date(r.date).toLocaleDateString('en-MY', {day:'2-digit',month:'2-digit',year:'numeric'}) : '-';
+      tableRows +=
+        '<tr>' +
+        '<td style="text-align:center">' + rowNum + '</td>' +
+        '<td>' + escHtml(r.feId) + '</td>' +
+        '<td>' + escHtml(r.building) + '</td>' +
+        '<td>' + escHtml(r.floor) + '</td>' +
+        '<td>' + escHtml(r.location) + '</td>' +
+        '<td style="text-align:center">' + escHtml(r.type) + '</td>' +
+        '<td style="text-align:center;' + statusStyle + '">' + escHtml(r.status) + '</td>' +
+        '<td>' + escHtml(r.technician || '-') + '</td>' +
+        '<td>' + dateStr + '</td>' +
+        '<td>' + escHtml(r.remarks || '') + '</td>' +
+        '</tr>';
+    });
+  } else {
+    tableRows = '<tr><td colspan="10" style="text-align:center;color:#9ca3af;padding:20px">No inspection records for this period.</td></tr>';
+  }
+
+  // Summary by building
+  var buildings = {};
+  (data.records || []).forEach(function(r) {
+    if (!buildings[r.building]) buildings[r.building] = { pass:0, fail:0, attn:0 };
+    if (r.status === 'PASS') buildings[r.building].pass++;
+    else if (r.status === 'FAIL') buildings[r.building].fail++;
+    else buildings[r.building].attn++;
+  });
+  var summaryRows = Object.keys(buildings).map(function(b) {
+    var g = buildings[b];
+    var total = g.pass + g.fail + g.attn;
+    return '<tr><td>' + b + '</td><td>' + total + '</td>' +
+      '<td style="color:#16a34a;font-weight:600">' + g.pass + '</td>' +
+      '<td style="color:#dc2626;font-weight:600">' + g.fail + '</td>' +
+      '<td style="color:#d97706;font-weight:600">' + g.attn + '</td>' +
+      '</tr>';
+  }).join('');
+
+  var pct = data.total > 0 ? (data.completed / data.total * 100).toFixed(1) : 0;
+
+  var html = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>FE Inspection Report - ' + MONTHS[month] + ' ' + year + '</title>' +
+    '<style>' +
+    'body{font-family:Arial,sans-serif;padding:20px;color:#1f2937;font-size:11px}' +
+    'h1{font-size:16px;text-align:center;margin:0}' +
+    'h2{font-size:13px;margin:0}' +
+    '.header{text-align:center;margin-bottom:20px;border-bottom:2px solid #1a56db;padding-bottom:12px}' +
+    '.header p{font-size:11px;color:#6b7280;margin-top:4px}' +
+    '.kpi-row{display:flex;gap:10px;margin-bottom:16px}' +
+    '.kpi-box{flex:1;border:1px solid #e5e7eb;border-radius:6px;padding:10px;text-align:center}' +
+    '.kpi-val{font-size:22px;font-weight:800}' +
+    '.kpi-lbl{font-size:10px;color:#6b7280;margin-top:2px}' +
+    '.section-title{font-size:12px;font-weight:700;color:#1a56db;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}' +
+    'table{width:100%;border-collapse:collapse;margin-bottom:14px}' +
+    'th{background:#1f2937;color:white;padding:6px 8px;text-align:left;font-size:10px;font-weight:700}' +
+    'td{padding:5px 8px;border-bottom:1px solid #f3f4f6;font-size:10px}' +
+    'tr:hover td{background:#f9fafb}' +
+    '.notes{font-size:10px;color:#6b7280;line-height:1.6;border-top:1px solid #e5e7eb;padding-top:12px;margin-top:10px}' +
+    '.sign-row{display:flex;gap:30px;margin-top:30px}' +
+    '.sign-box{flex:1;border-top:1px solid #1f2937;padding-top:8px;text-align:center;font-size:10px;color:#6b7280}' +
+    '.no-print{background:#1a56db;color:white;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}' +
+    '.no-print button{background:white;color:#1a56db;border:none;border-radius:6px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer}' +
+    '.pass{color:#16a34a}.fail{color:#dc2626}.attn{color:#d97706}' +
+    '@media print{.no-print{display:none!important}body{padding:0}@page{margin:12mm;size:A4 landscape}}' +
+    '</style></head><body>' +
+
+    '<div class="no-print">' +
+      '<span>FE Inspection Report &mdash; ' + MONTHS[month] + ' ' + year + '</span>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button onclick="lockAndPrint()" style="background:#16a34a;color:white;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">&#9999; Lock Signatures &amp; Print</button>' +
+        '<button onclick="window.print()" style="background:white;color:#1a56db;border:none;border-radius:6px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer">&#128438; Print Blank</button>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="header">' +
+      '<h1>Fire Extinguisher Inspection Report</h1>' +
+      '<h2>' + MONTHS[month] + ' ' + year + '</h2>' +
+      '<p>Generated: ' + generatedStr + '</p>' +
+    '</div>' +
+
+    '<div class="kpi-row">' +
+      '<div class="kpi-box"><div class="kpi-val">' + data.total + '</div><div class="kpi-lbl">Total FE</div></div>' +
+      '<div class="kpi-box"><div class="kpi-val pass">' + data.completed + '</div><div class="kpi-lbl">Completed</div></div>' +
+      '<div class="kpi-box"><div class="kpi-val fail">' + data.pending + '</div><div class="kpi-lbl">Pending</div></div>' +
+      '<div class="kpi-box"><div class="kpi-val">' + pct + '%</div><div class="kpi-lbl">Completion</div></div>' +
+      '<div class="kpi-box"><div class="kpi-val fail">' + data.failed + '</div><div class="kpi-lbl">Failed</div></div>' +
+    '</div>' +
+
+    '<div class="section-title">Summary by Building</div>' +
+    '<table><thead><tr><th>Building</th><th>Total</th><th>Pass</th><th>Fail</th><th>Attention</th></tr></thead>' +
+    '<tbody>' + (summaryRows || '<tr><td colspan="5" style="text-align:center;color:#9ca3af">No data</td></tr>') + '</tbody></table>' +
+
+    '<div class="section-title">Inspection Records</div>' +
+    '<table><thead><tr>' +
+      '<th>#</th><th>FE ID</th><th>Building</th><th>Floor</th><th>Location</th>' +
+      '<th>Type</th><th>Status</th><th>Technician</th><th>Date</th><th>Remarks</th>' +
+    '</tr></thead><tbody>' + tableRows + '</tbody></table>' +
+
+    '<div class="notes">' +
+      '<strong>Notes:</strong><br>' +
+      '1. Physical Condition - body free from damage, corrosion, leakage.<br>' +
+      '2. Rivet Pin - safety pin and tamper seal intact.<br>' +
+      '3. Pressure Gauge - within normal operating range (N/A for CO&#8322;).<br>' +
+      '4. FAIL items require immediate corrective action. ATTENTION items require monitoring.' +
+    '</div>' +
+
+    '<div class="sign-row" id="sign-section">' +
+      '<div class="sign-box">' +
+        '<div class="sign-label">Prepared By (Person in-charge)</div>' +
+        '<div class="sig-pad-wrap"><canvas id="sig-prepared" width="600" height="160"></canvas>' +
+        '<div class="sig-placeholder" id="ph-prepared">Sign here</div></div>' +
+        '<div class="sig-controls"><button onclick="sigClear(\'prepared\')">&#8635; Clear</button></div>' +
+        '<input class="sig-input" id="name-prepared" placeholder="Full Name">' +
+        '<input class="sig-input" id="date-prepared" type="date">' +
+      '</div>' +
+      '<div class="sign-box">' +
+        '<div class="sign-label">Verified By (Supervisor)</div>' +
+        '<div class="sig-pad-wrap"><canvas id="sig-verified" width="600" height="160"></canvas>' +
+        '<div class="sig-placeholder" id="ph-verified">Sign here</div></div>' +
+        '<div class="sig-controls"><button onclick="sigClear(\'verified\')">&#8635; Clear</button></div>' +
+        '<input class="sig-input" id="name-verified" placeholder="Full Name">' +
+        '<input class="sig-input" id="date-verified" type="date">' +
+      '</div>' +
+    '</div>' +
+
+    // Inline all signature pad JS — self-contained in popup, no parent window dependency
+    '<script>' +
+    'var drawing={prepared:false,verified:false};' +
+    'function getPos(e,c){var r=c.getBoundingClientRect(),sx=c.width/r.width,sy=c.height/r.height,' +
+      'cx=e.touches?e.touches[0].clientX:e.clientX,cy=e.touches?e.touches[0].clientY:e.clientY;' +
+      'return{x:(cx-r.left)*sx,y:(cy-r.top)*sy};}' +
+    'function initPad(id){' +
+      'var c=document.getElementById("sig-"+id),ph=document.getElementById("ph-"+id);' +
+      'if(!c)return;var ctx=c.getContext("2d");' +
+      'ctx.strokeStyle="#111";ctx.lineWidth=2;ctx.lineCap="round";ctx.lineJoin="round";' +
+      'ctx.clearRect(0,0,c.width,c.height);if(ph)ph.style.display="block";' +
+      'var nc=c.cloneNode(true);c.parentNode.replaceChild(nc,c);' +
+      'var c2=document.getElementById("sig-"+id),ctx2=c2.getContext("2d");' +
+      'ctx2.strokeStyle="#111";ctx2.lineWidth=2;ctx2.lineCap="round";ctx2.lineJoin="round";' +
+      'c2.addEventListener("mousedown",function(e){drawing[id]=true;var p=getPos(e,c2);ctx2.beginPath();ctx2.moveTo(p.x,p.y);if(ph)ph.style.display="none";});' +
+      'c2.addEventListener("mousemove",function(e){if(!drawing[id])return;var p=getPos(e,c2);ctx2.lineTo(p.x,p.y);ctx2.stroke();ctx2.beginPath();ctx2.moveTo(p.x,p.y);});' +
+      'c2.addEventListener("mouseup",function(){drawing[id]=false;ctx2.beginPath();});' +
+      'c2.addEventListener("mouseleave",function(){drawing[id]=false;ctx2.beginPath();});' +
+      'c2.addEventListener("touchstart",function(e){e.preventDefault();drawing[id]=true;var p=getPos(e,c2);ctx2.beginPath();ctx2.moveTo(p.x,p.y);if(ph)ph.style.display="none";},{passive:false});' +
+      'c2.addEventListener("touchmove",function(e){e.preventDefault();if(!drawing[id])return;var p=getPos(e,c2);ctx2.lineTo(p.x,p.y);ctx2.stroke();ctx2.beginPath();ctx2.moveTo(p.x,p.y);},{passive:false});' +
+      'c2.addEventListener("touchend",function(){drawing[id]=false;ctx2.beginPath();});' +
+    '}' +
+    'function sigClear(id){initPad(id);}' +
+    'function isEmpty(c){var d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;for(var i=3;i<d.length;i+=4){if(d[i]>0)return false;}return true;}' +
+    'function lockAndPrint(){' +
+      'var n1=document.getElementById("name-prepared").value.trim();' +
+      'var n2=document.getElementById("name-verified").value.trim();' +
+      'var miss=[];if(!n1)miss.push("Prepared By");if(!n2)miss.push("Verified By");' +
+      'if(miss.length){alert("Please enter name for: "+miss.join(", "));return;}' +
+      '["prepared","verified"].forEach(function(w){' +
+        'var c=document.getElementById("sig-"+w);' +
+        'var nameEl=document.getElementById("name-"+w);' +
+        'var dateEl=document.getElementById("date-"+w);' +
+        'var box=c?c.closest(".sign-box"):null;if(!box)return;' +
+        'var name=nameEl?nameEl.value.trim():"";' +
+        'var dateRaw=dateEl?dateEl.value:"";' +
+        'var dateDisp=dateRaw;' +
+        'try{dateDisp=new Date(dateRaw+"T12:00:00").toLocaleDateString("en-MY",{day:"2-digit",month:"long",year:"numeric"});}catch(e){}' +
+        'var imgSrc="";' +
+        'if(c&&!isEmpty(c)){var t=document.createElement("canvas");t.width=c.width;t.height=c.height;' +
+          'var tc=t.getContext("2d");tc.fillStyle="#fff";tc.fillRect(0,0,t.width,t.height);tc.drawImage(c,0,0);imgSrc=t.toDataURL("image/png");}' +
+        'box.innerHTML="<div class=\"sign-label\">"+(w==="prepared"?"Prepared By (Person in-charge)":"Verified By (Supervisor)")+"</div>"' +
+          '+(imgSrc?"<img class=\"sig-img\" src=\""+imgSrc+"\" alt=\"Signature\">":"<div style=\"height:80px;border:1px solid #e5e7eb;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:12px\">No signature</div>")' +
+          '+"<div style=\"margin-top:6px;font-size:12px;font-weight:700;color:#1f2937\">"+name+"</div>"' +
+          '+"<div style=\"font-size:11px;color:#6b7280\">"+dateDisp+"</div>";' +
+      '});' +
+      'var nb=document.querySelector(".no-print");if(nb)nb.style.display="none";' +
+      'setTimeout(function(){window.print();},300);' +
+    '}' +
+    'window.addEventListener("load",function(){' +
+      'var t=new Date().toISOString().split("T")[0];' +
+      'var dp=document.getElementById("date-prepared"),dv=document.getElementById("date-verified");' +
+      'if(dp)dp.value=t;if(dv)dv.value=t;' +
+      'initPad("prepared");initPad("verified");' +
+    '});' +
+    '<\/script>' +
+
+    '</body></html>';
+
+  var win = window.open('', '_blank', 'width=1100,height=800');
+  if (win) {
+    win.document.write(html);
+    win.document.close();
+  } else {
+    showToast('Popup blocked. Please allow popups.', 'error');
+  }
+}
+
+function feInjectSignaturePads(win) {
+  // Inject styles for signature pads
+  var style = win.document.createElement('style');
+  style.textContent = [
+    '.sign-box { flex:1; border:1.5px solid #e5e7eb; border-radius:8px; padding:14px; }',
+    '.sign-label { font-size:11px; font-weight:700; color:#374151; margin-bottom:8px; text-transform:uppercase; letter-spacing:.4px; }',
+    '.sig-pad-wrap { position:relative; border:1.5px solid #d1d5db; border-radius:6px; background:white; overflow:hidden; margin-bottom:8px; cursor:crosshair; }',
+    '.sig-pad-wrap canvas { display:block; width:100%; height:80px; touch-action:none; }',
+    '.sig-placeholder { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:12px; color:#d1d5db; pointer-events:none; font-style:italic; }',
+    '.sig-controls { display:flex; justify-content:flex-end; margin-bottom:8px; }',
+    '.sig-controls button { background:#f3f4f6; border:1px solid #e5e7eb; border-radius:4px; padding:4px 12px; font-size:11px; cursor:pointer; color:#6b7280; }',
+    '.sig-controls button:hover { background:#e5e7eb; }',
+    '.sig-input { width:100%; border:1px solid #e5e7eb; border-radius:4px; padding:6px 10px; font-size:12px; margin-top:5px; font-family:inherit; outline:none; }',
+    '.sig-input:focus { border-color:#1a56db; }',
+    '.lock-btn { background:#1a56db; color:white; border:none; border-radius:6px; padding:9px 20px; font-size:13px; font-weight:700; cursor:pointer; }',
+    '.lock-btn:hover { background:#1e429f; }',
+    '.sig-img { width:100%; height:80px; object-fit:contain; border:1px solid #e5e7eb; border-radius:6px; background:white; }'
+  ].join('');
+  win.document.head.appendChild(style);
+
+  // Add Lock & Print button to the no-print bar
+  var noprint = win.document.querySelector('.no-print');
+  if (noprint) {
+    var lockBtn = win.document.createElement('button');
+    lockBtn.className = 'lock-btn';
+    lockBtn.textContent = 'Lock Signatures & Print';
+    lockBtn.onclick = function() { feLockAndPrint(win); };
+    noprint.insertBefore(lockBtn, noprint.querySelector('button'));
+  }
+
+  // Set default dates
+  var today = new Date().toISOString().split('T')[0];
+  var dp = win.document.getElementById('date-prepared');
+  var dv = win.document.getElementById('date-verified');
+  if (dp) dp.value = today;
+  if (dv) dv.value = today;
+
+  // Init both signature pads
+  feInitSigPad(win, 'prepared');
+  feInitSigPad(win, 'verified');
+
+  // Expose sigClear globally in the window
+  win.sigClear = function(which) { feInitSigPad(win, which); };
+}
+
+function feInitSigPad(win, which) {
+  var canvas = win.document.getElementById('sig-' + which);
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+
+  // Scale for device pixel ratio
+  var rect   = canvas.getBoundingClientRect();
+  canvas.width  = 600;
+  canvas.height = 160;
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  var ph = win.document.getElementById('ph-' + which);
+  if (ph) ph.style.display = 'block';
+
+  var drawing = false;
+  var hasDrawn = false;
+
+  function getPos(e) {
+    var r = canvas.getBoundingClientRect();
+    var sx = canvas.width  / r.width;
+    var sy = canvas.height / r.height;
+    var cx = (e.clientX !== undefined ? e.clientX : e.touches[0].clientX);
+    var cy = (e.clientY !== undefined ? e.clientY : e.touches[0].clientY);
+    return { x: (cx - r.left) * sx, y: (cy - r.top) * sy };
+  }
+
+  function start(e) {
+    e.preventDefault();
+    drawing = true;
+    var p = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    if (ph) ph.style.display = 'none';
+  }
+  function move(e) {
+    if (!drawing) return;
+    e.preventDefault();
+    var p = getPos(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    hasDrawn = true;
+  }
+  function end(e) { drawing = false; ctx.beginPath(); }
+
+  // Remove old listeners by cloning
+  var newCanvas = canvas.cloneNode(true);
+  canvas.parentNode.replaceChild(newCanvas, canvas);
+  var c2 = win.document.getElementById('sig-' + which);
+  var ctx2 = c2.getContext('2d');
+  ctx2.strokeStyle = '#111827';
+  ctx2.lineWidth   = 2;
+  ctx2.lineCap     = 'round';
+  ctx2.lineJoin    = 'round';
+
+  c2.addEventListener('mousedown',  function(e){ drawing=true; var p=getPos2(e,c2); ctx2.beginPath(); ctx2.moveTo(p.x,p.y); if(ph)ph.style.display='none'; });
+  c2.addEventListener('mousemove',  function(e){ if(!drawing)return; var p=getPos2(e,c2); ctx2.lineTo(p.x,p.y); ctx2.stroke(); ctx2.beginPath(); ctx2.moveTo(p.x,p.y); });
+  c2.addEventListener('mouseup',    function(e){ drawing=false; ctx2.beginPath(); });
+  c2.addEventListener('mouseleave', function(e){ drawing=false; ctx2.beginPath(); });
+  c2.addEventListener('touchstart', function(e){ e.preventDefault(); drawing=true; var p=getPos2(e.touches[0],c2); ctx2.beginPath(); ctx2.moveTo(p.x,p.y); if(ph)ph.style.display='none'; }, {passive:false});
+  c2.addEventListener('touchmove',  function(e){ e.preventDefault(); if(!drawing)return; var p=getPos2(e.touches[0],c2); ctx2.lineTo(p.x,p.y); ctx2.stroke(); ctx2.beginPath(); ctx2.moveTo(p.x,p.y); }, {passive:false});
+  c2.addEventListener('touchend',   function(e){ drawing=false; ctx2.beginPath(); });
+}
+
+function getPos2(e, canvas) {
+  var r  = canvas.getBoundingClientRect();
+  var sx = canvas.width  / r.width;
+  var sy = canvas.height / r.height;
+  return { x: (e.clientX - r.left) * sx, y: (e.clientY - r.top) * sy };
+}
+
+function isCanvasEmpty(canvas) {
+  var data = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+  for (var i = 3; i < data.length; i += 4) { if (data[i] > 0) return false; }
+  return true;
+}
+
+function feLockAndPrint(win) {
+  var signs = ['prepared','verified'];
+  var missing = [];
+
+  signs.forEach(function(which) {
+    var nameEl = win.document.getElementById('name-' + which);
+    var name   = nameEl ? nameEl.value.trim() : '';
+    if (!name) missing.push(which === 'prepared' ? 'Prepared By' : 'Verified By');
+  });
+
+  if (missing.length) {
+    win.alert('Please enter name for: ' + missing.join(', '));
+    return;
+  }
+
+  // Capture each signature
+  signs.forEach(function(which) {
+    var canvas  = win.document.getElementById('sig-' + which);
+    var nameEl  = win.document.getElementById('name-' + which);
+    var dateEl  = win.document.getElementById('date-' + which);
+    var wrap    = canvas ? canvas.parentNode : null;
+    if (!canvas || !wrap) return;
+
+    var name = nameEl ? nameEl.value.trim() : '';
+    var dateRaw = dateEl ? dateEl.value : '';
+    var dateDisp = dateRaw;
+    try {
+      dateDisp = new Date(dateRaw + 'T12:00:00').toLocaleDateString('en-MY', {day:'2-digit',month:'long',year:'numeric'});
+    } catch(e) {}
+
+    // White background composite
+    var tmp = win.document.createElement('canvas');
+    tmp.width  = canvas.width;
+    tmp.height = canvas.height;
+    var tCtx = tmp.getContext('2d');
+    tCtx.fillStyle = '#ffffff';
+    tCtx.fillRect(0, 0, tmp.width, tmp.height);
+    tCtx.drawImage(canvas, 0, 0);
+    var imgSrc = isCanvasEmpty(canvas) ? '' : tmp.toDataURL('image/png');
+
+    // Replace the whole sign-box content
+    var box = wrap.parentNode;
+    box.innerHTML =
+      '<div class="sign-label">' + (which === 'prepared' ? 'Prepared By (Person in-charge)' : 'Verified By (Supervisor)') + '</div>' +
+      (imgSrc
+        ? '<img class="sig-img" src="' + imgSrc + '" alt="Signature">'
+        : '<div style="height:80px;border:1px solid #e5e7eb;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:12px">No signature</div>') +
+      '<div style="margin-top:6px;font-size:12px;font-weight:700;color:#1f2937">' + name + '</div>' +
+      '<div style="font-size:11px;color:#6b7280">' + dateDisp + '</div>';
+  });
+
+  // Hide the no-print bar and print
+  var noprint = win.document.querySelector('.no-print');
+  if (noprint) noprint.style.display = 'none';
+  setTimeout(function() { win.print(); }, 300);
+}
+
+function feExportCSV() {
+  var rows = [['FE ID','Building','Floor','Location','Type','Status']];
+  FE.data.forEach(function(x) {
+    rows.push([x.feId, x.building, x.floor, x.location, x.type, x.inspected ? 'Completed' : 'Pending']);
+  });
+  var csv = rows.map(function(r) { return r.map(function(c) {
+    var s = String(c); return s.indexOf(',') >= 0 ? '"' + s + '"' : s;
+  }).join(','); }).join('\r\n');
+  var blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a'); a.href = url; a.download = 'FE_Inspection.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Close FE sheet when clicking outside
+document.addEventListener('click', function(e) {
+  var sheet = document.getElementById('fe-sheet');
+  if (!sheet || !sheet.classList.contains('open')) return;
+  if (!sheet.contains(e.target) && !e.target.closest('.fe-marker')) feCloseSheet();
+});
+
+
+// ═══════════════════════════════════════════════════════════
+// FE IMPROVEMENTS — Additional JS
+// ═══════════════════════════════════════════════════════════
+
+// ── 1. INSPECTION HISTORY in bottom sheet ─────────────────
+async function feShowInspectSheetWithHistory(x) {
+  var sheet = document.getElementById('fe-sheet');
+  sheet.className = 'fe-sheet open';
+
+  // Days left indicator
+  var now = new Date();
+  var daysInMonth = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+  var daysLeft = daysInMonth - now.getDate();
+  var urgencyCls = daysLeft <= 5 ? 'critical' : daysLeft <= 10 ? 'warn' : 'ok';
+  var urgencyTxt = daysLeft <= 0 ? 'Last day!' : daysLeft + ' days left this month';
+
+  sheet.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
+      '<div class="fe-sheet-title">' + escHtml(x.feId) + '</div>' +
+      '<button onclick="feCloseSheet()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-400)">&#10005;</button>' +
+    '</div>' +
+    '<div class="fe-sheet-sub">' + escHtml(x.location) + ' &bull; ' + escHtml(x.building) + ' ' + escHtml(x.floor) + ' &bull; ' + escHtml(x.type) + '</div>' +
+    '<div class="fe-days-left ' + urgencyCls + '" style="margin-top:10px">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
+      urgencyTxt + ' &bull; ' + (x.inspected ? '<strong>Inspected this month</strong>' : '<strong>Not yet inspected</strong>') +
+    '</div>' +
+    '<div style="margin:12px 0;display:flex;gap:8px">' +
+      '<button class="btn btn-primary" style="flex:1" onclick="feCloseSheet();feStartInspection(' + "'" + x.feId + "'" + ')">&#128203; Inspect</button>' +
+      '<button class="btn btn-outline" style="flex:none;padding:10px" onclick="feLoadHistory(' + "'" + x.feId + "'" + ')">History</button>' +
+    '</div>' +
+    '<div id="fe-history-panel"></div>';
+}
+
+async function feLoadHistory(feId) {
+  var panel = document.getElementById('fe-history-panel');
+  if (!panel) return;
+  panel.innerHTML = '<div style="text-align:center;padding:12px;color:var(--gray-400)">Loading...</div>';
+  try {
+    var history = await gasCall('getFEInspectionHistory', feId);
+    if (!history || !history.length) {
+      panel.innerHTML = '<div style="text-align:center;padding:12px;color:var(--gray-400);font-size:13px">No inspection history found.</div>';
+      return;
+    }
+    panel.innerHTML = '<div style="font-size:12px;font-weight:700;color:var(--gray-600);text-transform:uppercase;margin-bottom:8px">Last ' + history.length + ' Inspections</div>' +
+      '<div class="fe-history-list">' +
+        history.map(function(h) {
+          var dotCls = h.status === 'PASS' ? 'pass' : h.status === 'FAIL' ? 'fail' : 'attn';
+          var dateStr = h.date ? new Date(h.date).toLocaleDateString('en-MY', {day:'2-digit',month:'short',year:'numeric'}) : '–';
+          return '<div class="fe-history-item">' +
+            '<div class="fe-history-dot ' + dotCls + '">' + h.status.charAt(0) + '</div>' +
+            '<div class="fe-history-info">' +
+              '<div class="fe-history-date">' + dateStr + ' &bull; <span class="' +
+                (h.status==='PASS'?'fe-badge-pass':h.status==='FAIL'?'fe-badge-fail':'fe-badge-attention') + '">' + h.status + '</span></div>' +
+              '<div class="fe-history-tech">&#128100; ' + escHtml(h.technician || 'Unknown') + '</div>' +
+              (h.remarks ? '<div class="fe-history-remark">"' + escHtml(h.remarks) + '"</div>' : '') +
+            '</div>' +
+          '</div>';
+        }).join('') +
+      '</div>';
+  } catch(e) {
+    panel.innerHTML = '<div style="color:red;font-size:12px">Error loading history</div>';
+  }
+}
+
+// Override original feShowInspectSheet to use improved version
+function feShowInspectSheet(x) { feShowInspectSheetWithHistory(x); }
+
+// ── 2. OVERDUE LOGIC in dashboard ─────────────────────────
+async function feLoadOverdueStatus() {
+  try {
+    var status = await gasCall('getFEOverdueStatus');
+    var el = document.getElementById('fe-overdue-bar');
+    if (!el || !status) return;
+    var daysLeft = status.daysLeft;
+    var cls = daysLeft <= 5 ? 'critical' : daysLeft <= 10 ? 'warn' : 'ok';
+    var txt = daysLeft <= 0 ? 'Last day of month!' : daysLeft + ' days remaining this month';
+    el.className = 'fe-days-left ' + cls;
+    el.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
+      txt + ' &bull; <strong>' + status.overdue + ' FE not yet inspected</strong>';
+  } catch(e) {}
+}
+
+// ── 3 & 7. FAILED FE ALERT in dashboard ───────────────────
+async function feLoadFailedAlert() {
+  var container = document.getElementById('fe-failed-alert');
+  if (!container) return;
+  try {
+    var failed = await gasCall('getFEFailedList');
+    if (!failed || !failed.length) { container.innerHTML = ''; return; }
+
+    container.innerHTML = '<div class="fe-alert-banner">' +
+      '<div class="fe-alert-title">' +
+        '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>' +
+        failed.length + ' FE Require Attention' +
+      '</div>' +
+      failed.slice(0,5).map(function(f) {
+        var badge = f.status === 'FAIL'
+          ? '<span class="fe-badge-fail">FAIL</span>'
+          : '<span class="fe-badge-attention">ATTENTION</span>';
+        return '<div class="fe-alert-item">' +
+          '<div>' +
+            '<div style="font-weight:700;font-size:13px">' + escHtml(f.feId) + '</div>' +
+            '<div style="font-size:12px;color:var(--gray-500)">' + escHtml(f.location) + ' &bull; ' + escHtml(f.building) + '</div>' +
+          '</div>' +
+          badge +
+        '</div>';
+      }).join('') +
+      (failed.length > 5 ? '<div style="font-size:12px;color:#dc2626;text-align:center;padding:6px">+' + (failed.length-5) + ' more</div>' : '') +
+    '</div>';
+  } catch(e) {}
+}
+
+// Update loadFEDashboard to include overdue + failed alerts
+var _origLoadFEDashboard = loadFEDashboard;
+loadFEDashboard = async function() {
+  showScreen('fe-dashboard');
+  setLoading(true, 'Loading FE data...');
+  try {
+    await feLoadData();
+    var stats = await gasCall('getFEDashboardStats');
+    setLoading(false);
+    feRenderDashboardKPI(stats);
+    feRenderTable();
+
+    // Inject overdue bar + failed alert above table
+    var tableWrap = document.querySelector('#screen-fe-dashboard .fe-table-wrap');
+    if (tableWrap) {
+      var extras = '<div id="fe-failed-alert"></div>' +
+        '<div id="fe-overdue-bar" class="fe-days-left ok" style="margin-bottom:12px">Loading...</div>';
+      if (!document.getElementById('fe-failed-alert')) {
+        tableWrap.insertAdjacentHTML('beforebegin', extras);
+      }
+    }
+
+    await feLoadOverdueStatus();
+    await feLoadFailedAlert();
+
+    var el = document.getElementById('fe-month-label');
+    var now = new Date();
+    if (el) el.textContent = now.toLocaleDateString('en-MY', { month:'long', year:'numeric' }) + ' inspection status';
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+};
+
+// ── 4. QR LINKS ────────────────────────────────────────────
+async function feGenerateQRLinks() {
+  var resultEl = document.getElementById('fe-qr-result');
+  if (resultEl) resultEl.textContent = 'Generating...';
+  setLoading(true, 'Generating inspection links...');
+  try {
+    var result = await gasCall('generateFEInspectionLinks');
+    setLoading(false);
+    if (result && result.success) {
+      showToast(result.count + ' inspection links generated!', 'success');
+      if (resultEl) {
+        resultEl.innerHTML = '&#10003; ' + result.count + ' links saved to Inspection_Links sheet. ' +
+          '<a href="' + escHtml(result.sheetUrl) + '" target="_blank" style="color:var(--blue-primary)">Open Sheet</a>';
+      }
+    } else {
+      showToast((result && result.error) || 'Failed', 'error');
+    }
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// ── 6. HISTORICAL REPORT ───────────────────────────────────
+function feInitPeriodSelectors() {
+  var mSel = document.getElementById('fer-month-sel');
+  var ySel = document.getElementById('fer-year-sel');
+  if (!mSel || !ySel) return;
+  var MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var now = new Date();
+  mSel.innerHTML = MONTHS.map(function(m,i) {
+    return '<option value="' + (i+1) + '"' + (i === now.getMonth() ? ' selected' : '') + '>' + m + '</option>';
+  }).join('');
+  var curYr = now.getFullYear();
+  ySel.innerHTML = [curYr-1, curYr].map(function(y) {
+    return '<option value="' + y + '"' + (y === curYr ? ' selected' : '') + '>' + y + '</option>';
+  }).join('');
+}
+
+async function feLoadHistoricalReport() {
+  var month = document.getElementById('fer-month-sel') ? document.getElementById('fer-month-sel').value : new Date().getMonth()+1;
+  var year  = document.getElementById('fer-year-sel')  ? document.getElementById('fer-year-sel').value  : new Date().getFullYear();
+  setLoading(true, 'Loading historical data...');
+  try {
+    var data = await gasCall('getFEHistoricalReport', month, year);
+    setLoading(false);
+    if (!data || data.error) { showToast('Error: ' + (data && data.error), 'error'); return; }
+
+    // Update KPIs
+    feRenderReportKPI({ total: data.total, completed: data.completed, pending: data.pending, failed: data.failed });
+
+    // Update monthly table with historical data
+    var tbody = document.getElementById('fer-monthly-body');
+    if (tbody && data.records) {
+      var groups = {};
+      data.records.forEach(function(r) {
+        var key = r.building + '|' + r.floor;
+        if (!groups[key]) groups[key] = { building: r.building, floor: r.floor, total: 0, pass: 0, fail: 0, attn: 0 };
+        groups[key].total++;
+        if (r.status === 'PASS') groups[key].pass++;
+        else if (r.status === 'FAIL') groups[key].fail++;
+        else groups[key].attn++;
+      });
+      tbody.innerHTML = Object.values(groups).map(function(r) {
+        var pct = r.total > 0 ? (r.pass/r.total*100).toFixed(1) : 0;
+        return '<tr><td>' + r.building + '</td><td>' + r.floor + '</td><td>' + r.total + '</td>' +
+          '<td style="color:#16a34a;font-weight:600">' + r.pass + '</td>' +
+          '<td style="color:#dc2626;font-weight:600">' + r.fail + '</td><td>' + pct + '%</td></tr>';
+      }).join('');
+    }
+
+    var info = document.getElementById('fer-period-info');
+    if (info) info.textContent = data.completed + '/' + data.total + ' inspected';
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// Override loadFEReport to init period selectors
+var _origLoadFEReport = loadFEReport;
+loadFEReport = async function() {
+  showScreen('fe-report');
+  feInitPeriodSelectors();
+  setLoading(true, 'Loading report...');
+  try {
+    if (!FE.data.length) await feLoadData();
+    var stats = await gasCall('getFEDashboardStats');
+    setLoading(false);
+    feRenderReportKPI(stats);
+    feRenderBuildingSummary();
+    feRenderTypeSummary();
+    feRenderMonthlyTable();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+};
+
+// ── 8. FE SETTINGS ─────────────────────────────────────────
+async function loadFESettings() {
+  showScreen('fe-settings');
+  setLoading(true, 'Loading settings...');
+  try {
+    var settings = await gasCall('getFESettings');
+    setLoading(false);
+
+    // Map URLs
+    var mapKeys = ['P1|Ground','P1|1st Floor','P2|Ground','P2|Mezzanine','P2|1st Floor','P2|2nd Floor','P2|Roof'];
+    var mapLabels = {'P1|Ground':'P1 Ground','P1|1st Floor':'P1 1st Floor','P2|Ground':'P2 Ground',
+      'P2|Mezzanine':'P2 Mezzanine','P2|1st Floor':'P2 1st Floor','P2|2nd Floor':'P2 2nd Floor','P2|Roof':'P2 Roof'};
+    var mapHtml = mapKeys.map(function(key) {
+      var val = (settings.mapUrls && settings.mapUrls[key]) ? settings.mapUrls[key] : feGetMapImageDefault(key);
+      return '<div class="fe-settings-row">' +
+        '<div class="fe-settings-label">' + mapLabels[key] + '</div>' +
+        '<input class="fe-settings-input" id="fe-map-url-' + key.replace('|','-') + '" value="' + escHtml(val) + '" placeholder="Image URL">' +
+        '<button class="btn btn-primary btn-sm" style="margin-left:6px" onclick="feSaveMapUrl(' + "'" + key + "'" + ')">Save</button>' +
+      '</div>';
+    }).join('');
+    var mapEl = document.getElementById('fe-map-url-settings');
+    if (mapEl) mapEl.innerHTML = mapHtml;
+
+    // FE Types
+    var types = settings.feTypes || ['ABC','CO2'];
+    feRenderTypeList(types);
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function feGetMapImageDefault(key) {
+  var defaults = {
+    'P1|Ground':'https://i.ibb.co/wZt8Bzs8/p1-gf.png',
+    'P1|1st Floor':'https://i.ibb.co/Y7RMwdX4/p1-1f.png',
+    'P2|Ground':'https://i.ibb.co/p6LqBnG0/p2-gf.png',
+    'P2|Mezzanine':'https://i.ibb.co/KcJFyJHW/p2-mezz.png',
+    'P2|1st Floor':'https://i.ibb.co/DgPwg3DN/p2-1f.png',
+    'P2|2nd Floor':'https://i.ibb.co/C3YCbFC3/p2-2f.png',
+    'P2|Roof':'https://i.ibb.co/BKgdY8SK/p2-roof.png'
+  };
+  return defaults[key] || '';
+}
+
+async function feSaveMapUrl(key) {
+  var inputId = 'fe-map-url-' + key.replace('|','-');
+  var val = document.getElementById(inputId) ? document.getElementById(inputId).value.trim() : '';
+  if (!val) return;
+  setLoading(true, 'Saving...');
+  try {
+    await gasCall('saveFESetting', 'MAP_URL', key, val);
+    setLoading(false);
+    showToast('Map URL saved for ' + key, 'success');
+    // Update live map
+    FE.customMapUrls = FE.customMapUrls || {};
+    FE.customMapUrls[key] = val;
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+function feRenderTypeList(types) {
+  var el = document.getElementById('fe-type-list');
+  if (!el) return;
+  el.innerHTML = types.map(function(t) {
+    return '<div style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-light);color:var(--blue-primary);border-radius:20px;padding:4px 10px;font-size:13px;font-weight:600;margin:3px">' +
+      escHtml(t) +
+      '<button onclick="feRemoveType(' + "'" + t + "'" + ')" style="background:none;border:none;cursor:pointer;color:var(--blue-primary);font-size:14px;margin-left:2px;line-height:1">&#10005;</button>' +
+    '</div>';
+  }).join('');
+}
+
+async function feAddType() {
+  var input = document.getElementById('fe-new-type-input');
+  var val = input ? input.value.trim() : '';
+  if (!val) return;
+  setLoading(true, 'Adding type...');
+  try {
+    await gasCall('saveFESetting', 'FE_TYPE', val, '1');
+    setLoading(false);
+    showToast('FE type added: ' + val, 'success');
+    if (input) input.value = '';
+    await loadFESettings();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+async function feRemoveType(type) {
+  if (!confirm('Remove type: ' + type + '?')) return;
+  setLoading(true, 'Removing...');
+  try {
+    await gasCall('saveFESetting', 'FE_TYPE', type, '0');
+    setLoading(false);
+    showToast('Type removed', 'success');
+    await loadFESettings();
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
+
+// ── 9. AUTO-DETECT FE INFO FROM ID ────────────────────────
+function feAutoDetectInfo() {
+  var feIdEl = document.getElementById('fe-new-id');
+  if (!feIdEl || !feIdEl.value.trim()) return;
+  var info = { building: 'P1', floor: 'Ground' };
+  var id   = feIdEl.value.toUpperCase();
+  if (id.indexOf('CO2II') >= 0 || id.indexOf('DPII') >= 0 || id.indexOf('P2') >= 0) info.building = 'P2';
+  if      (id.indexOf('-MF-') >= 0 || id.indexOf('MEZZ') >= 0) info.floor = 'Mezzanine';
+  else if (id.indexOf('-FF-') >= 0 || id.indexOf('-1F-') >= 0) info.floor = '1st Floor';
+  else if (id.indexOf('-SF-') >= 0 || id.indexOf('-2F-') >= 0) info.floor = '2nd Floor';
+  else if (id.indexOf('-RF-') >= 0 || id.indexOf('ROOF') >= 0) info.floor = 'Roof';
+  var bEl = document.getElementById('fe-new-building');
+  var fEl = document.getElementById('fe-new-floor');
+  if (bEl) bEl.value = info.building;
+  if (fEl) fEl.value = info.floor;
+  showToast('Auto-detected: ' + info.building + ' ' + info.floor, 'info');
+}
+
+// ── 10. EXCEL EXPORT (SheetJS via unpkg) ──────────────────
+function feExportXLSX() {
+  // Load SheetJS dynamically if not present
+  if (typeof XLSX !== 'undefined') {
+    _feDoXLSXExport();
+    return;
+  }
+  var script = document.createElement('script');
+  script.src = 'https://unpkg.com/xlsx/dist/xlsx.full.min.js';
+  script.onload = function() { _feDoXLSXExport(); };
+  script.onerror = function() { showToast('Could not load Excel library. Using CSV instead.', 'error'); feExportCSV(); };
+  document.head.appendChild(script);
+}
+
+function _feDoXLSXExport() {
+  var month = document.getElementById('fer-month-sel') ? parseInt(document.getElementById('fer-month-sel').value) : new Date().getMonth()+1;
+  var year  = document.getElementById('fer-year-sel')  ? parseInt(document.getElementById('fer-year-sel').value)  : new Date().getFullYear();
+  var MONTHS = ['','January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  var wb = XLSX.utils.book_new();
+
+  // Sheet 1: Summary
+  var summaryRows = [
+    ['Fire Extinguisher Inspection Report'],
+    ['Period:', MONTHS[month] + ' ' + year],
+    [],
+    ['Building','Floor','Total','Completed','Pending','Completion %']
+  ];
+  var groups = {};
+  FE.data.forEach(function(fe) {
+    var key = fe.building + '|' + fe.floor;
+    if (!groups[key]) groups[key] = { building: fe.building, floor: fe.floor, total: 0, completed: 0 };
+    groups[key].total++;
+    if (fe.inspected) groups[key].completed++;
+  });
+  Object.values(groups).forEach(function(r) {
+    var pct = r.total > 0 ? Math.round(r.completed/r.total*100) : 0;
+    summaryRows.push([r.building, r.floor, r.total, r.completed, r.total-r.completed, pct + '%']);
+  });
+  var ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  ws1['!cols'] = [{wch:15},{wch:15},{wch:10},{wch:12},{wch:10},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+
+  // Sheet 2: FE List
+  var listRows = [['FE ID','Building','Floor','Location','Type','Status (This Month)']];
+  FE.data.forEach(function(fe) {
+    listRows.push([fe.feId, fe.building, fe.floor, fe.location, fe.type, fe.inspected ? 'Completed' : 'Pending']);
+  });
+  var ws2 = XLSX.utils.aoa_to_sheet(listRows);
+  ws2['!cols'] = [{wch:18},{wch:12},{wch:14},{wch:28},{wch:8},{wch:16}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'FE List');
+
+  XLSX.writeFile(wb, 'FE_Inspection_' + MONTHS[month] + '_' + year + '.xlsx');
+}
+
+// ── QR DIRECT LINK — handle after login ───────────────────
+// Extend loginSuccess session check to handle OPEN_FE_ID
+var _origInitCheck = null;
+(function() {
+  var origInit = window.addEventListener;
+  // After login, if OPEN_FE_ID is set, go directly to FE inspection
+})();
+
+// Check FE direct link after session restore or login
+async function checkFEDirectLink() {
+  var feId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
+  if (!feId) return false;
+  // Show loading, load FE data, then open inspection form
+  setLoading(true, 'Opening inspection form...');
+  try {
+    await feLoadData();
+    setLoading(false);
+    // Show the FE dashboard screen as base, then open inspection overlay
+    showScreen('fe-dashboard');
+    feRenderTable();
+    // Small delay so screen renders first
+    setTimeout(function() {
+      feStartInspection(feId);
+    }, 200);
+  } catch(e) {
+    setLoading(false);
+    showToast('Could not load FE: ' + escHtml(e.message), 'error');
+    loadPlantsScreen();
+  }
+  return true;
+}
+
+// ── UPDATE ADD MODAL — wire auto-detect ───────────────────
+// Patch feOpenAddModal to add onblur auto-detect
+var _origFeOpenAddModal = feOpenAddModal;
+feOpenAddModal = function() {
+  _origFeOpenAddModal();
+  setTimeout(function() {
+    var idEl = document.getElementById('fe-new-id');
+    if (idEl) idEl.setAttribute('onblur', 'feAutoDetectInfo()');
+  }, 100);
+};
+
+// Override feGetMapImage to support custom URLs from settings
+var _origFeGetMapImage = feGetMapImage;
+feGetMapImage = function() {
+  var key = FE.building + '|' + FE.floor;
+  if (FE.customMapUrls && FE.customMapUrls[key]) return FE.customMapUrls[key];
+  return _origFeGetMapImage();
+};
+
+
+// ═══════════════════════════════════════════════════════════
+// QR LABEL GENERATOR
+// ═══════════════════════════════════════════════════════════
+
+var QRL = {
+  baseUrl: '',
+  filtered: []
+};
+
+// Called when loadFESettings runs — populate the FE list
+async function qrlInit() {
+  // Get base URL first
+  try {
+    QRL.baseUrl = await gasCall('getWebAppUrl');
+  } catch(e) {
+    QRL.baseUrl = '';
+  }
+  if (!FE.data.length) await feLoadData();
+  qrlFilterFE();
+}
+
+function qrlFilterFE() {
+  var building = document.getElementById('qrl-building') ? document.getElementById('qrl-building').value : '';
+  var floor    = document.getElementById('qrl-floor')    ? document.getElementById('qrl-floor').value    : '';
+
+  QRL.filtered = FE.data.filter(function(fe) {
+    if (building && fe.building !== building) return false;
+    if (floor    && fe.floor    !== floor)    return false;
+    return true;
+  });
+
+  qrlRenderList();
+}
+
+function qrlRenderList() {
+  var el = document.getElementById('qrl-fe-list');
+  if (!el) return;
+
+  if (!QRL.filtered.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray-400);font-size:13px">No FE found for selected filters.</div>';
+    qrlUpdateCount();
+    return;
+  }
+
+  el.innerHTML = QRL.filtered.map(function(fe) {
+    var typeCls = fe.type === 'ABC' ? 'abc' : fe.type === 'CO2' ? 'co2' : 'other';
+    return '<div class="qrl-fe-item" onclick="qrlToggle(this)">' +
+      '<input type="checkbox" class="qrl-cb" data-feid="' + escHtml(fe.feId) + '" onclick="event.stopPropagation();qrlUpdateCount()">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="qrl-fe-name">' + escHtml(fe.feId) + '</div>' +
+        '<div class="qrl-fe-sub">' + escHtml(fe.location) + ' &bull; ' + escHtml(fe.building) + ' &rsaquo; ' + escHtml(fe.floor) + '</div>' +
+      '</div>' +
+      '<span class="qrl-fe-type ' + typeCls + '">' + escHtml(fe.type) + '</span>' +
+    '</div>';
+  }).join('');
+
+  qrlUpdateCount();
+}
+
+function qrlToggle(row) {
+  var cb = row.querySelector('.qrl-cb');
+  if (cb) { cb.checked = !cb.checked; qrlUpdateCount(); }
+}
+
+function qrlSelectAll(checked) {
+  document.querySelectorAll('.qrl-cb').forEach(function(cb) { cb.checked = checked; });
+  qrlUpdateCount();
+}
+
+function qrlUpdateCount() {
+  var checked = document.querySelectorAll('.qrl-cb:checked').length;
+  var total   = document.querySelectorAll('.qrl-cb').length;
+  var el = document.getElementById('qrl-count');
+  if (el) el.textContent = checked + ' of ' + total + ' selected';
+  // Sync select-all checkbox state
+  var allCb = document.getElementById('qrl-select-all');
+  if (allCb) allCb.checked = checked > 0 && checked === total;
+}
+
+function qrlGetSelectedFEs() {
+  var selected = [];
+  document.querySelectorAll('.qrl-cb:checked').forEach(function(cb) {
+    var feId = cb.getAttribute('data-feid');
+    var fe   = FE.data.find(function(f) { return f.feId === feId; });
+    if (fe) selected.push(fe);
+  });
+  return selected;
+}
+
+function feGenerateQRLabels() {
+  var selected = qrlGetSelectedFEs();
+  if (!selected.length) {
+    showToast('Please select at least one FE', 'error');
+    return;
+  }
+
+  var size = document.getElementById('qrl-size')  ? document.getElementById('qrl-size').value  : 'md';
+  var cols = document.getElementById('qrl-cols')  ? document.getElementById('qrl-cols').value  : '3';
+  var baseUrl = QRL.baseUrl || '';
+
+  // QR image sizes
+  var qrPx = size === 'sm' ? 80 : size === 'lg' ? 140 : 110;
+
+  // Build label HTML
+  var labelsHtml = selected.map(function(fe) {
+    var inspectUrl = baseUrl + '?feId=' + encodeURIComponent(fe.feId);
+    var qrUrl      = 'https://api.qrserver.com/v1/create-qr-code/?data=' +
+                     encodeURIComponent(inspectUrl) +
+                     '&size=' + qrPx + 'x' + qrPx + '&margin=2&color=1a1a1a&bgcolor=ffffff';
+    var typeCls    = fe.type === 'ABC' ? 'abc' : fe.type === 'CO2' ? 'co2' : 'other';
+
+    return '<div class="qr-label qr-label-size-' + size + '">' +
+      '<div class="qr-label-qr"><img src="' + qrUrl + '" alt="QR" width="' + qrPx + '" height="' + qrPx + '" onerror="this.style.opacity=0.3"></div>' +
+      '<div class="qr-label-id">' + escHtml(fe.feId) + '</div>' +
+      '<div class="qr-label-location">' + escHtml(fe.location) + '<br>' + escHtml(fe.building) + ' &rsaquo; ' + escHtml(fe.floor) + '</div>' +
+      '<div class="qr-label-type ' + typeCls + '">' + escHtml(fe.type) + '</div>' +
+      '<div class="qr-label-scan">Scan to Inspect</div>' +
+    '</div>';
+  }).join('');
+
+  // Build full print page
+  var now = new Date().toLocaleDateString('en-MY', { day:'2-digit', month:'long', year:'numeric' });
+  var printHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<title>FE Inspection Labels</title>' +
+    '<style>' +
+    '*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }' +
+    'body { font-family: Segoe UI, Arial, sans-serif; background: #f3f4f6; }' +
+    '.no-print-label { background: #1a56db; color: white; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }' +
+    '.no-print-label h2 { font-size: 15px; font-weight: 700; }' +
+    '.no-print-label button { background: white; color: #1a56db; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }' +
+    '.no-print-label .info { font-size: 12px; opacity: .8; margin-top: 2px; }' +
+    '.label-sheet { background: white; margin: 16px auto; max-width: 210mm; padding: 8mm; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }' +
+    '.label-grid { display: grid; gap: 4mm; grid-template-columns: repeat(' + cols + ', 1fr); }' +
+    '.qr-label { border: 1.5px solid #d1d5db; border-radius: 6px; padding: 4mm 3mm 3mm; display: flex; flex-direction: column; align-items: center; background: white; page-break-inside: avoid; position: relative; overflow: hidden; }' +
+    '.qr-label::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: #1a56db; }' +
+    '.qr-label-qr { border: 1px solid #e5e7eb; border-radius: 4px; padding: 2px; background: white; margin-bottom: 2.5mm; }' +
+    '.qr-label-qr img { display: block; width: ' + qrPx + 'px; height: ' + qrPx + 'px; }' +
+    '.qr-label-id { font-size: ' + (size==='lg'?'12':'10') + 'px; font-weight: 800; color: #1f2937; text-align: center; letter-spacing: .3px; margin-bottom: 1mm; word-break: break-all; }' +
+    '.qr-label-location { font-size: ' + (size==='lg'?'10':'8') + 'px; color: #6b7280; text-align: center; line-height: 1.3; margin-bottom: 1mm; }' +
+    '.qr-label-type { font-size: 8px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-bottom: 1.5mm; }' +
+    '.qr-label-type.abc { background: #ffe4e6; color: #e11d48; }' +
+    '.qr-label-type.co2 { background: #dbeafe; color: #1d4ed8; }' +
+    '.qr-label-type.other { background: #f3f4f6; color: #6b7280; }' +
+    '.qr-label-scan { font-size: 7px; color: #9ca3af; text-align: center; text-transform: uppercase; font-weight: 600; letter-spacing: .5px; }' +
+    '@media print { .no-print-label { display: none !important; } body { background: white; } .label-sheet { margin: 0; padding: 6mm; max-width: none; box-shadow: none; border-radius: 0; } @page { margin: 6mm; size: A4 portrait; } }' +
+    '</style></head><body>' +
+
+    '<div class="no-print-label">' +
+      '<div>' +
+        '<h2>&#128247; FE Inspection Labels — ' + selected.length + ' labels</h2>' +
+        '<div class="info">Generated ' + now + ' &bull; ' + cols + ' per row &bull; ' + (size==='sm'?'Small':size==='lg'?'Large':'Medium') + ' size</div>' +
+      '</div>' +
+      '<button onclick="window.print()">&#128438; Print Labels</button>' +
+    '</div>' +
+
+    '<div class="label-sheet">' +
+      '<div class="label-grid">' + labelsHtml + '</div>' +
+    '</div>' +
+
+    '</body></html>';
+
+  // Open in new window
+  var win = window.open('', '_blank', 'width=900,height=700');
+  if (win) {
+    win.document.write(printHtml);
+    win.document.close();
+  } else {
+    showToast('Popup blocked. Please allow popups for this site.', 'error');
+  }
+}
+
+// Wire qrlInit into loadFESettings
+var _origLoadFESettings = loadFESettings;
+loadFESettings = async function() {
+  await _origLoadFESettings();
+  // Init QRL after settings loaded
+  setTimeout(qrlInit, 500);
+};
+
+// ── INIT ───────────────────────────────────────────────────────
+window.addEventListener('load', function() {
+  // Hide all screens initially using the master list
+  SCREEN_IDS.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  var nav = document.getElementById('top-nav');
+  if (nav) nav.style.display = 'none';
+
+  setLoading(false);
+
+  // Check for existing session (survives page reload, clears on tab close)
+  var saved = null;
+  try { saved = JSON.parse(sessionStorage.getItem('fmp_session')); } catch(e) {}
+
+  if (saved && saved.techID && saved.name) {
+    // Restore session without PIN
+    APP.session = saved;
+    var nameEl = document.getElementById('nav-user-name');
+    var avatarEl = document.getElementById('nav-avatar-text');
+    if (nameEl) nameEl.textContent = saved.name;
+    if (avatarEl) avatarEl.textContent = saved.name.charAt(0).toUpperCase();
+    // Check if direct FE link (async — must await)
+    var feId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
+    if (feId) { checkFEDirectLink(); return; }
+    var openAreaID  = (typeof OPEN_AREA_ID  !== 'undefined') ? OPEN_AREA_ID  : '';
+    var openPlantID = (typeof OPEN_PLANT_ID !== 'undefined') ? OPEN_PLANT_ID : '';
+    if (openAreaID) {
+      loadPlantsScreen().then(function() {
+        return gasCall('getAreasWithStats', openPlantID || (APP.plants[0] && APP.plants[0].plantID));
+      }).then(function(areasData) {
+        var foundArea = null;
+        (areasData || []).forEach(function(a){ if (a.areaID === openAreaID) foundArea = a; });
+        if (foundArea) {
+          for (var pi = 0; pi < APP.plants.length; pi++) {
+            if (APP.plants[pi].plantID === foundArea.plantID) { APP.currentPlant = APP.plants[pi]; break; }
+          }
+          APP.currentArea = foundArea;
+          APP.areas = areasData;
+          return loadEquipmentScreen();
+        }
+      }).catch(function() { loadPlantsScreen(); });
+    } else {
+      loadPlantsScreen();
+    }
+  } else {
+    showScreen('login');
+    initLogin();
+  }
+});
+</script>
