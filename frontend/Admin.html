@@ -153,7 +153,15 @@
     /* Type chips */
     .type-chip { font-size: 11px; padding: 2px 8px; border-radius: 20px; font-weight: 600; }
     .type-numeric { background: var(--blue-light); color: var(--blue-primary); }
-    .type-yesno { background: var(--green-100); color: var(--green-600); }
+    .type-choice {
+  background: var(--green-100);
+  color: var(--green-600);
+}
+
+.type-multichoice {
+  background: var(--orange-100);
+  color: var(--orange-600);
+}
     .type-text { background: var(--purple-100); color: var(--purple-500); }
 
     @media (max-width: 768px) {
@@ -411,26 +419,69 @@
       <div class="form-group"><label class="form-label">Parameter Name <span class="required">*</span></label><input type="text" class="form-input" id="param-name" placeholder="e.g. Voltage L1"></div>
       <div class="form-row col3">
         <div class="form-group"><label class="form-label">Type <span class="required">*</span></label>
-          <select class="form-select" id="param-type" onchange="toggleParamFields()"><option value="numeric">Numeric</option><option value="yesno">Yes/No</option><option value="text">Text</option></select>
+          <select class="form-select" id="param-type" onchange="toggleParamFields()">
+  <option value="numeric">Numeric</option>
+  <option value="choice">Single Choice</option>
+  <option value="multichoice">Multi Choice</option>
+  <option value="text">Text</option>
+</select>
         </div>
         <div class="form-group"><label class="form-label">Unit</label><input type="text" class="form-input" id="param-unit" placeholder="e.g. kV, A, °C"></div>
         <div class="form-group"><label class="form-label">Sort Order</label><input type="number" class="form-input" id="param-sort" value="1" min="1"></div>
       </div>
       <div id="param-numeric-fields">
-        <div class="form-row">
-          <div class="form-group"><label class="form-label">Min Value</label><input type="number" class="form-input" id="param-min" placeholder="e.g. 31" step="any"></div>
-          <div class="form-group"><label class="form-label">Max Value</label><input type="number" class="form-input" id="param-max" placeholder="e.g. 35" step="any"></div>
-        </div>
-      </div>
-      <div id="param-options-field" style="display:none">
-        <div class="form-group"><label class="form-label">Options</label><input type="text" class="form-input" id="param-options" placeholder="Comma-separated options"><div class="form-hint">Leave blank for free text.</div></div>
-      </div>
-      <div class="form-group">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--gray-700)">
-          <input type="checkbox" id="param-required" checked style="width:16px;height:16px;accent-color:var(--blue-primary)"> Required field
-        </label>
-      </div>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Min Value</label>
+      <input type="number" class="form-input" id="param-min" placeholder="e.g. 31" step="any">
     </div>
+
+    <div class="form-group">
+      <label class="form-label">Max Value</label>
+      <input type="number" class="form-input" id="param-max" placeholder="e.g. 35" step="any">
+    </div>
+  </div>
+</div>
+
+<div id="param-options-field" style="display:none">
+  <div class="form-group">
+    <label class="form-label">Options</label>
+    <input
+      type="text"
+      class="form-input"
+      id="param-options"
+      placeholder="GOOD,NG or GOOD,DIRTY,BROKEN">
+    <div class="form-hint">
+      Example: GOOD,NG
+    </div>
+  </div>
+</div>
+
+<div id="param-statusrule-field" style="display:none">
+  <div class="form-group">
+    <label class="form-label">Status Rules</label>
+    <input
+      type="text"
+      class="form-input"
+      id="param-statusrule"
+      placeholder="Normal,OutOfSpec">
+    <div class="form-hint">
+      Example:
+      GOOD,NG → Normal,OutOfSpec
+    </div>
+  </div>
+</div>
+
+<div class="form-group">
+  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--gray-700)">
+    <input
+      type="checkbox"
+      id="param-required"
+      checked
+      style="width:16px;height:16px;accent-color:var(--blue-primary)">
+    Required field
+  </label>
+</div>
     <div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal('modal-param')">Cancel</button><button class="btn btn-primary" onclick="saveParam()">Save Parameter</button></div>
   </div>
 </div>
@@ -964,6 +1015,7 @@ function openParamModal(templateID) {
   document.getElementById('param-min').value = '';
   document.getElementById('param-max').value = '';
   document.getElementById('param-options').value = '';
+  document.getElementById('param-statusrule').value = '';
   document.getElementById('param-required').checked = true;
   document.getElementById('param-modal-title').textContent = templateID ? 'Edit Parameter' : 'Add Parameter';
   document.getElementById('param-equip-id').value = document.getElementById('param-equip-filter').value;
@@ -980,6 +1032,7 @@ function openParamModal(templateID) {
       document.getElementById('param-min').value = t.minValue !== undefined ? t.minValue : '';
       document.getElementById('param-max').value = t.maxValue !== undefined ? t.maxValue : '';
       document.getElementById('param-options').value = t.options || '';
+      document.getElementById('param-statusrule').value = t.statusRule || '';
       document.getElementById('param-required').checked = t.required !== false;
       toggleParamFields();
     }
@@ -988,9 +1041,20 @@ function openParamModal(templateID) {
 }
 
 function toggleParamFields() {
+
   var type = document.getElementById('param-type').value;
-  document.getElementById('param-numeric-fields').style.display = type === 'numeric' ? '' : 'none';
-  document.getElementById('param-options-field').style.display = type === 'text' ? '' : 'none';
+
+  document.getElementById('param-numeric-fields').style.display =
+    (type === 'numeric') ? '' : 'none';
+
+  var showChoice =
+  (type === 'choice' || type === 'multichoice');
+
+document.getElementById('param-options-field').style.display =
+  showChoice ? '' : 'none';
+
+document.getElementById('param-statusrule-field').style.display =
+  showChoice ? '' : 'none';
 }
 
 function saveParam() {
@@ -1008,7 +1072,8 @@ function saveParam() {
     maxValue: document.getElementById('param-max').value,
     sortOrder: parseInt(document.getElementById('param-sort').value) || 1,
     options: document.getElementById('param-options').value.trim(),
-    required: document.getElementById('param-required').checked
+statusRule: document.getElementById('param-statusrule').value.trim(),
+required: document.getElementById('param-required').checked
   }).then(function(result) {
     setLoading(false);
     if (result && result.success) {
