@@ -656,6 +656,35 @@ body {
 .param-status.outofrange { color: var(--red-600); }
 .param-status svg { width: 14px; height: 14px; }
 
+.choice-group{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:8px;
+}
+
+.choice-btn{
+  min-width:90px;
+  padding:10px 18px;
+  border:1.5px solid var(--gray-300);
+  border-radius:var(--radius-sm);
+  background:white;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:600;
+  transition:var(--transition);
+}
+
+.choice-btn:hover{
+  border-color:var(--blue-primary);
+}
+
+.choice-btn.selected{
+  background:var(--blue-primary);
+  color:white;
+  border-color:var(--blue-primary);
+}
+
 .param-yesno { display: flex; gap: 8px; margin-top: 6px; }
 .yesno-btn {
   flex: 1; padding: 8px; border-radius: var(--radius-sm);
