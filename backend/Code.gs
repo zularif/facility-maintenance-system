@@ -7,7 +7,7 @@ const CONFIG = {
   SPREADSHEET_ID: '1AXQYycsUyPDT8Z1B7o1KG4khp3JuOFu2pwYqaAWoZs4',
   ADMIN_PIN: '1234',
   APP_NAME: 'Factory Maintenance Platform',
-  VERSION: '4.0'
+  VERSION: '1.0'
 };
 
 // ============================================================
@@ -67,7 +67,7 @@ function setupSpreadsheet() {
     Plants: ['PlantID', 'PlantName', 'Location', 'Status', 'CreatedDate'],
     Areas: ['AreaID', 'PlantID', 'AreaName', 'Description', 'Status', 'CreatedDate'],
     Equipment: ['EquipID', 'AreaID', 'EquipmentName', 'QRCode', 'AssetTag', 'InspectionCycle', 'Category', 'Status', 'CreatedDate'],
-    Templates: ['TemplateID', 'EquipID', 'ParameterName', 'Unit', 'MinValue', 'MaxValue', 'SortOrder', 'Type', 'Options', 'Required'],
+    Templates: ['TemplateID', 'EquipID', 'ParameterName', 'Unit', 'MinValue', 'MaxValue', 'SortOrder', 'Type', 'Options', 'Required', 'StatusRule'],
     InspectionHeader: ['InspectionID', 'EquipID', 'TechnicianID', 'InspectionDate', 'Status', 'Notes', 'CreatedDate'],
     InspectionDetails: ['DetailID', 'InspectionID', 'ParameterName', 'Value', 'Status', 'CreatedDate'],
     Technicians: ['TechID', 'Name', 'PIN', 'Role', 'Status', 'CreatedDate'],
@@ -432,7 +432,8 @@ function getTemplates(equipID) {
         sortOrder: row[6],
         type: row[7],
         options: row[8],
-        required: row[9]
+        required: row[9],
+        statusRule: row[10]
       }))
       .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
   } catch (e) {
@@ -449,23 +450,37 @@ function saveTemplate(tmpl) {
     if (tmpl.templateID) {
       for (let i = 1; i < data.length; i++) {
         if (data[i][0] === tmpl.templateID) {
-          sheet.getRange(i + 1, 1, 1, 10).setValues([[
-            tmpl.templateID, tmpl.equipID, tmpl.parameterName,
-            tmpl.unit || '', tmpl.minValue || '', tmpl.maxValue || '',
-            tmpl.sortOrder || 1, tmpl.type || 'numeric',
-            tmpl.options || '', tmpl.required !== undefined ? tmpl.required : true
-          ]]);
+          sheet.getRange(i + 1, 1, 1, 11).setValues([[
+  tmpl.templateID,
+  tmpl.equipID,
+  tmpl.parameterName,
+  tmpl.unit || '',
+  tmpl.minValue || '',
+  tmpl.maxValue || '',
+  tmpl.sortOrder || 1,
+  tmpl.type || 'numeric',
+  tmpl.options || '',
+  tmpl.required !== undefined ? tmpl.required : true,
+  tmpl.statusRule || ''
+]]);
           return { success: true };
         }
       }
     }
     const newID = generateID('TM', sheet);
-    sheet.appendRow([
-      newID, tmpl.equipID, tmpl.parameterName,
-      tmpl.unit || '', tmpl.minValue || '', tmpl.maxValue || '',
-      tmpl.sortOrder || 1, tmpl.type || 'numeric',
-      tmpl.options || '', tmpl.required !== undefined ? tmpl.required : true
-    ]);
+   sheet.appendRow([
+  newID,
+  tmpl.equipID,
+  tmpl.parameterName,
+  tmpl.unit || '',
+  tmpl.minValue || '',
+  tmpl.maxValue || '',
+  tmpl.sortOrder || 1,
+  tmpl.type || 'numeric',
+  tmpl.options || '',
+  tmpl.required !== undefined ? tmpl.required : true,
+  tmpl.statusRule || ''
+]);
     return { success: true, templateID: newID };
   } catch (e) {
     return { success: false, error: e.message };
@@ -1056,14 +1071,20 @@ function getEquipmentReport(equipID, dateFrom, dateTo) {
       if (!inspByDate[d]) return null;
       var insp = inspByDate[d];
       var details = detailMap[insp.inspectionID] || {};
-      var hasOOR = Object.values(details).some(function(v){ return v.status === 'OutOfRange'; });
+      var hasOOR = Object.values(details).some(function(v){
+  return v.status === 'OutOfRange' ||
+         v.status === 'OutOfSpec';
+});
       return hasOOR ? 'Attention' : 'Normal';
     });
     var footerOutSpec = dates.map(function(d) {
       if (!inspByDate[d]) return null;
       var insp = inspByDate[d];
       var details = detailMap[insp.inspectionID] || {};
-      return Object.values(details).filter(function(v){ return v.status === 'OutOfRange'; }).length;
+      return Object.values(details).filter(function(v){
+  return v.status === 'OutOfRange' ||
+         v.status === 'OutOfSpec';
+}).length;
     });
 
     return {
@@ -1934,12 +1955,21 @@ function getFEInspectionHistory(feId) {
 }
 
 // ── HISTORICAL FE REPORT (by month/year) ──────────────────
-function getFEHistoricalReport(month, year) {
+function getFEHistoricalReport(month, year, plant) {
+
+
+  Logger.log('getFEHistoricalReport START');
+  Logger.log('month=' + month);
+  Logger.log('year=' + year);
+
+
   try {
     var tz   = Session.getScriptTimeZone();
     var mo   = parseInt(month);
     var yr   = parseInt(year);
     var feList = getFireExtinguishers();
+
+    
 
     var sheet   = getFESheet('InspectionHistory');
     var data    = sheet.getDataRange().getValues();
@@ -1948,9 +1978,19 @@ function getFEHistoricalReport(month, year) {
     }
     data.shift();
 
-    var records = data.filter(function(r) {
-      return Number(r[2]) === mo && Number(r[3]) === yr;
-    });
+   var records = data.filter(function(r) {
+
+  var monthMatch = Number(r[2]) === mo;
+  var yearMatch  = Number(r[3]) === yr;
+
+  var plantMatch =
+    plant === 'ALL' ||
+    String(r[5]).toUpperCase() === plant;
+
+  return monthMatch &&
+         yearMatch &&
+         plantMatch;
+});
 
     var inspectedIDs = {};
     records.forEach(function(r) { inspectedIDs[r[4]] = r[17]; });
@@ -1958,24 +1998,57 @@ function getFEHistoricalReport(month, year) {
     var uniqueCompleted = Object.keys(inspectedIDs).length;
     var failed = records.filter(function(r) { return r[17] === 'FAIL'; }).length;
 
+    var result = {
+  month: mo,
+  year: yr,
+  total: feList.length,
+  completed: uniqueCompleted,
+  pending: feList.length - uniqueCompleted,
+  failed: failed,
+  records: records.map(function(r) {
     return {
-      month:     mo,
-      year:      yr,
-      total:     feList.length,
-      completed: uniqueCompleted,
-      pending:   feList.length - uniqueCompleted,
-      failed:    failed,
-      records:   records.map(function(r) {
-        return {
-          feId:      r[4], building: r[5], floor: r[6], location: r[7], type: r[8],
-          status:    r[17], technician: r[18] || '', remarks: r[16] || '',
-          date:      r[1]
-        };
-      })
-    };
-  } catch(e) {
-    return { error: e.message };
-  }
+  feId: String(r[4] || ''),
+  building: String(r[5] || ''),
+  floor: String(r[6] || ''),
+  location: String(r[7] || ''),
+  type: String(r[8] || ''),
+
+  physicalCondition: String(r[9] || ''),
+  rivetPin: String(r[10] || ''),
+  pressureGauge: String(r[11] || ''),
+  dischargeHose: String(r[12] || ''),
+  handleCondition: String(r[13] || ''),
+  labelCondition: String(r[14] || ''),
+  visibility: String(r[15] || ''),
+
+  remarks: String(r[16] || ''),
+  status: String(r[17] || ''),
+  technician: String(r[18] || ''),
+
+  date: r[1]
+    ? Utilities.formatDate(
+        new Date(r[1]),
+        Session.getScriptTimeZone(),
+        'yyyy-MM-dd'
+      )
+    : ''
+};
+  })
+};
+
+Logger.log(JSON.stringify(result));
+
+return result;
+
+}catch(e) {
+
+  return {
+    error:
+      'MESSAGE=' + e.message +
+      '\nLINE=' + (e.lineNumber || '?') +
+      '\nSTACK=' + (e.stack || 'No Stack')
+  };
+}
 }
 
 // ── FE OVERDUE — check per FE ─────────────────────────────
