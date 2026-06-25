@@ -1,4 +1,5 @@
 <script>
+
 // ============================================================
 // FACTORY MAINTENANCE PLATFORM v4.0 — Javascript.html
 // Fixed: escaped <\/svg> in JS strings, fixed <triangle> SVG
@@ -29,13 +30,14 @@ const APP = {
   clCycleFilter: 'All',
   allPlantStats: {},
   cache: { plantsTs: 0, areasTs: {}, checklistTs: {} },
-  CACHE_TTL: 60000,
+  CACHE_TTL: 120000,
 };
 
 // ── SCREENS ───────────────────────────────────────────────────
-var SCREEN_IDS = ['login-screen', 'screen-plants', 'screen-areas', 'screen-equipment', 'screen-form', 'screen-checklist', 'screen-dashboard', 'screen-fe-dashboard', 'screen-fe-map', 'screen-fe-report', 'screen-fe-settings'];
+var SCREEN_IDS = ['login-screen', 'screen-mytasks', 'screen-plants', 'screen-areas', 'screen-equipment', 'screen-form', 'screen-checklist', 'screen-dashboard', 'screen-fe-dashboard', 'screen-fe-map', 'screen-fe-report', 'screen-fe-settings'];
 var SCREEN_MAP = {
   login:       'login-screen',
+  mytasks:     'screen-mytasks',
   plants:      'screen-plants',
   areas:       'screen-areas',
   equipment:   'screen-equipment',
@@ -180,18 +182,7 @@ async function initLogin() {
 }
 
 function renderTechList() {
-  var list = document.getElementById('tech-list');
-  if (!list) return;
-  list.innerHTML = APP.technicians.map(function(t) {
-    return '<div class="tech-item" onclick="selectTech(\'' + t.techID + '\')">' +
-      '<div class="tech-avatar-sm">' + escHtml(t.name.charAt(0).toUpperCase()) + '<\/div>' +
-      '<div class="tech-info">' +
-        '<div class="tech-name">' + escHtml(t.name) + '<\/div>' +
-        '<div class="tech-role">' + escHtml(t.role) + '<\/div>' +
-      '<\/div>' +
-      '<svg class="tech-check" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"><\/polyline><\/svg>' +
-    '<\/div>';
-  }).join('');
+  // PIN-first flow: no list to render. Techs are loaded into APP.technicians for PIN lookup.
 }
 
 function selectTech(techID) {
@@ -199,23 +190,58 @@ function selectTech(techID) {
   for (var i = 0; i < APP.technicians.length; i++) {
     if (APP.technicians[i].techID === techID) { loginState.selectedTech = APP.technicians[i]; break; }
   }
-  document.querySelectorAll('.tech-item').forEach(function(el) { el.classList.remove('selected'); });
-  var items = document.querySelectorAll('.tech-item');
-  for (var j = 0; j < items.length; j++) {
-    if (items[j].getAttribute('onclick') && items[j].getAttribute('onclick').indexOf(techID) >= 0) {
-      items[j].classList.add('selected'); break;
-    }
+}
+
+// PIN-first: user types their PIN on the initial screen, we resolve who they are
+function pinFirstPress(val) {
+  var errEl = document.getElementById('pin-first-error');
+  var hintEl = document.getElementById('pin-first-hint');
+  if (errEl) errEl.style.display = 'none';
+
+  if (val === 'DEL') {
+    loginState.pin = loginState.pin.slice(0, -1);
+  } else if (loginState.pin.length < 4) {
+    loginState.pin += val;
   }
-  setTimeout(function() { showStep('step-pin'); }, 200);
-  var nameEl = document.getElementById('pin-tech-name');
-  if (nameEl && loginState.selectedTech) nameEl.textContent = loginState.selectedTech.name;
+
+  // Update dots on step-select (they share same class)
+  var dots = document.querySelectorAll('#step-select .pin-dot');
+  dots.forEach(function(d, i) { d.classList.toggle('filled', i < loginState.pin.length); });
+
+  if (loginState.pin.length === 4) {
+    setTimeout(function() { doLoginByPin(loginState.pin); }, 200);
+  }
+}
+
+async function doLoginByPin(pin) {
+  setLoading(true, 'Verifying...');
+  try {
+    var result = await gasCall('verifyLoginByPin', pin);
+    setLoading(false);
+    if (result && result.success) {
+      loginState.selectedTech = { techID: result.techID, name: result.name, role: result.role };
+      await finishLogin(result);
+    } else {
+      loginState.pin = '';
+      var dots = document.querySelectorAll('#step-select .pin-dot');
+      dots.forEach(function(d) { d.classList.remove('filled'); });
+      var errEl = document.getElementById('pin-first-error');
+      if (errEl) { errEl.style.display = 'block'; }
+      setTimeout(function() { if (errEl) errEl.style.display = 'none'; }, 2500);
+    }
+  } catch(e) {
+    setLoading(false);
+    loginState.pin = '';
+    var errEl = document.getElementById('pin-first-error');
+    if (errEl) errEl.style.display = 'block';
+  }
 }
 
 function showStep(id) {
   document.querySelectorAll('.login-step').forEach(function(s) { s.classList.remove('active'); });
   var el = document.getElementById(id);
   if (el) el.classList.add('active');
-  if (id === 'step-pin') { loginState.pin = ''; updatePinDots(); }
+  if (id === 'step-pin' || id === 'step-quick') { loginState.pin = ''; updatePinDots(); }
 }
 
 function pinPress(val) {
@@ -230,51 +256,46 @@ function updatePinDots() {
   dots.forEach(function(d, i) { d.classList.toggle('filled', i < loginState.pin.length); });
 }
 
+// Shared post-login handler called by all login paths
+async function finishLogin(result) {
+  APP.session = result;
+  sessionSave(result);
+  try { localStorage.setItem('fmp_last_user', JSON.stringify({ techID: result.techID, name: result.name, role: result.role })); } catch(e) {}
+  var nameEl = document.getElementById('nav-user-name');
+  var avatarEl = document.getElementById('nav-avatar-text');
+  if (nameEl) nameEl.textContent = result.name;
+  if (avatarEl) avatarEl.textContent = result.name.charAt(0).toUpperCase();
+  showToast('Welcome, ' + result.name + '!', 'success');
+  loginState.pin = '';
+  if (!APP.technicians || !APP.technicians.length) {
+    gasCall('getTechnicians').then(function(t) { if (t) APP.technicians = t; }).catch(function(){});
+  }
+  var directFeId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
+  if (directFeId) { checkFEDirectLink(); return; }
+  var openAreaID  = (typeof OPEN_AREA_ID  !== 'undefined') ? OPEN_AREA_ID  : '';
+  var openEquipID = (typeof OPEN_EQUIP_ID !== 'undefined') ? OPEN_EQUIP_ID : '';
+  if (openAreaID) {
+    var ok = await handleQRDeepLink(openAreaID, openEquipID);
+    if (ok) return;
+  }
+  await loadMyTasksScreen();
+}
+
+// Legacy step-pin / step-quick path (selectedTech already set)
 async function doLogin() {
   if (!loginState.selectedTech) return;
   setLoading(true, 'Verifying...');
   try {
     var result = await gasCall('verifyLogin', loginState.selectedTech.techID, loginState.pin);
     setLoading(false);
-    if (result.success) {
-      APP.session = result;
-      // Persist session so page reload doesn't require re-login
-      try { sessionStorage.setItem('fmp_session', JSON.stringify(result)); } catch(e) {}
-      var nameEl = document.getElementById('nav-user-name');
-      var avatarEl = document.getElementById('nav-avatar-text');
-      if (nameEl) nameEl.textContent = result.name;
-      if (avatarEl) avatarEl.textContent = result.name.charAt(0).toUpperCase();
-      showToast('Welcome, ' + result.name + '!', 'success');
-
-      // Check if direct FE QR link
-      var directFeId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
-      if (directFeId) { checkFEDirectLink(); return; }
-
-      // Check if navigating from dashboard to a specific area
-      var openAreaID  = (typeof OPEN_AREA_ID  !== 'undefined') ? OPEN_AREA_ID  : '';
-      var openPlantID = (typeof OPEN_PLANT_ID !== 'undefined') ? OPEN_PLANT_ID : '';
-      if (openAreaID) {
-        await loadPlantsScreen();
-        try {
-          var areasData = await gasCall('getAreasWithStats', openPlantID || (APP.plants[0] && APP.plants[0].plantID));
-          var foundArea = null;
-          (areasData || []).forEach(function(a){ if (a.areaID === openAreaID) foundArea = a; });
-          if (foundArea) {
-            for (var pi = 0; pi < APP.plants.length; pi++) {
-              if (APP.plants[pi].plantID === foundArea.plantID) { APP.currentPlant = APP.plants[pi]; break; }
-            }
-            APP.currentArea = foundArea;
-            APP.areas = areasData;
-            await loadEquipmentScreen();
-            return;
-          }
-        } catch(navErr) { console.log('Auto-nav error:', navErr); }
-      }
-      await loadPlantsScreen();
+    if (result && result.success) {
+      await finishLogin(result);
     } else {
       loginState.pin = '';
       updatePinDots();
-      var errEl = document.getElementById('login-error');
+      var activeStep = document.querySelector('.login-step.active');
+      var errId = activeStep && activeStep.id === 'step-quick' ? 'quick-error' : 'login-error';
+      var errEl = document.getElementById(errId);
       if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Incorrect PIN. Please try again.'; }
       setTimeout(function() { if (errEl) errEl.style.display = 'none'; }, 2000);
     }
@@ -286,7 +307,7 @@ async function doLogin() {
 
 function logout() {
   APP.session = null;
-  try { sessionStorage.removeItem('fmp_session'); } catch(e) {}
+  sessionClear();
   loginState = { selectedTech: null, pin: '' };
   closeDropdown();
   showScreen('login');
@@ -295,6 +316,7 @@ function logout() {
 
 // ── PLANTS SCREEN ──────────────────────────────────────────────
 async function loadPlantsScreen() {
+  sessionTouch();
   showScreen('plants');
   var now = Date.now();
   // Use cached data if fresh (within 60s) and already rendered
@@ -325,6 +347,25 @@ function renderPlantsScreen() {
   document.getElementById('dash-total-areas').textContent  = s.totalAreas  || 0;
   document.getElementById('dash-total-equip').textContent  = s.totalEquipment || 0;
   document.getElementById('dash-pending').textContent      = s.pendingToday  || 0;
+
+  // My Tasks banner
+  var bannerEl = document.getElementById('mytasks-banner');
+  var bannerText = document.getElementById('mytasks-banner-text');
+  var badgeEl = document.getElementById('sidebar-mytasks-badge');
+  var pending = s.pendingToday || 0;
+  if (bannerEl) {
+    if (pending > 0) {
+      bannerEl.style.display = 'flex';
+      if (bannerText) bannerText.textContent = pending + ' inspection' + (pending === 1 ? '' : 's') + ' need attention';
+    } else {
+      bannerEl.style.display = 'none';
+      if (bannerText) bannerText.textContent = 'All caught up!';
+    }
+  }
+  if (badgeEl) {
+    if (pending > 0) { badgeEl.style.display = 'inline-block'; badgeEl.textContent = pending; }
+    else badgeEl.style.display = 'none';
+  }
 
   // Greeting bar
   var now  = new Date();
@@ -534,7 +575,7 @@ function renderAreaPagination() {
   var btns = document.getElementById('area-page-btns');
   if (!btns) return;
   var html = '<button class="pg-btn" onclick="areaChangePage(' + (APP.areaPage-1) + ')" ' + (APP.areaPage===1?'disabled':'') + '>\u2039 Previous<\/button>';
-  for (var i = 1; i <= pages; i++) html += '<button class="pg-btn ' + (i===APP.areaPage?'active':'') + '" onclick="areaChangePage(' + i + ')">' + i + '<\/button>';
+  for (var i = 1; i <= pages; i++) html += '<button class="pg-btn pg-num ' + (i===APP.areaPage?'active':'') + '" onclick="areaChangePage(' + i + ')">' + i + '<\/button>';
   html += '<button class="pg-btn" onclick="areaChangePage(' + (APP.areaPage+1) + ')" ' + (APP.areaPage===pages?'disabled':'') + '>Next \u203A<\/button>';
   btns.innerHTML = html;
 }
@@ -560,11 +601,24 @@ async function openArea(areaID) {
 
 // ── EQUIPMENT SCREEN ───────────────────────────────────────────
 async function loadEquipmentScreen() {
+  sessionTouch();
+  if (APP.cameFromMyTasks) {
+    APP.cameFromMyTasks = false;
+    return loadMyTasksScreen();
+  }
   showScreen('equipment');
+  // Use cache if same area+date and within TTL
+  var cacheKey = APP.currentArea.areaID + '_' + APP.selectedDate;
+  var cached = APP.cache.areasTs[cacheKey];
+  if (cached && (Date.now() - cached) < APP.CACHE_TTL && APP.equipWithStatus.length) {
+    renderEquipmentScreen();
+    return;
+  }
   setLoading(true, 'Loading equipment...');
   try {
     var equipWithStatus = await gasCall('getEquipmentWithStatus', APP.currentArea.areaID, APP.selectedDate);
     APP.equipWithStatus = equipWithStatus || [];
+    APP.cache.areasTs[cacheKey] = Date.now();
     renderEquipmentScreen();
     setLoading(false);
   } catch(e) {
@@ -596,6 +650,7 @@ function renderEquipmentScreen() {
   document.getElementById('es-tomorrow').textContent = pending;
 
   renderEquipCards();
+  eqrlOnEquipLoaded();
 }
 
 function getFilteredEquip() {
@@ -672,7 +727,7 @@ function renderEquipPagination(total) {
   if (!btns) return;
   var html = '<button class="pg-btn" onclick="equipChangePage(' + (APP.equipPage-1) + ')" ' + (APP.equipPage===1?'disabled':'') + '>\u2039 Previous<\/button>';
   var maxP = Math.min(pages, 5);
-  for (var i = 1; i <= maxP; i++) html += '<button class="pg-btn ' + (i===APP.equipPage?'active':'') + '" onclick="equipChangePage(' + i + ')">' + i + '<\/button>';
+  for (var i = 1; i <= maxP; i++) html += '<button class="pg-btn pg-num ' + (i===APP.equipPage?'active':'') + '" onclick="equipChangePage(' + i + ')">' + i + '<\/button>';
   html += '<button class="pg-btn" onclick="equipChangePage(' + (APP.equipPage+1) + ')" ' + (APP.equipPage>=pages||pages===0?'disabled':'') + '>Next \u203A<\/button>';
   btns.innerHTML = html;
 }
@@ -709,12 +764,16 @@ async function openInspectionForm(equipID) {
     if (APP.equipWithStatus[i].equipID === equipID) { APP.currentEquip = APP.equipWithStatus[i]; break; }
   }
   APP.currentInspection = { details: {} };
+  clearPhotoPreview();
   showScreen('form');
   setLoading(true, 'Loading inspection form...');
   try {
-    var results = await Promise.all([gasCall('getTemplates', equipID), gasCall('getTechnicians')]);
+    // Only fetch technicians if not already cached
+    var calls = [gasCall('getTemplates', equipID)];
+    if (!APP.technicians || !APP.technicians.length) calls.push(gasCall('getTechnicians'));
+    var results = await Promise.all(calls);
     APP.templates = results[0] || [];
-    APP.technicians = results[1] || [];
+    if (results[1]) APP.technicians = results[1];
     renderInspectionForm();
     setLoading(false);
   } catch(e) {
@@ -1071,11 +1130,28 @@ async function saveInspection(status) {
       APP.cache.plantsTs = 0;
       APP.cache.areasTs  = {};
       APP.cache.checklistTs = {};
+      // Upload photos if any — keep loading spinner visible
+      if (APP.pendingPhotos && APP.pendingPhotos.length && result.inspectionID) {
+        setLoading(true, 'Uploading ' + APP.pendingPhotos.length + ' photo(s)...');
+        try {
+          var photoPayload = APP.pendingPhotos.map(function(p) {
+            return { name: p.name, base64: p.base64, mimeType: p.mimeType };
+          });
+          await gasCall('savePhotos', result.inspectionID, eq.equipID, photoPayload);
+          clearPhotoPreview();
+        } catch(pe) {
+          setLoading(false);
+          showToast('Inspection saved but photo upload failed: ' + pe.message, 'warning');
+        }
+        setLoading(false);
+      }
       showToast(status === 'Draft' ? 'Draft saved.' : 'Inspection saved!', 'success');
       if (status === 'Completed') {
         setTimeout(async function() {
-          // Return to checklist if we came from there, else equipment screen
-          if (APP.checklist && APP.checklist.length > 0) {
+          if (APP.cameFromMyTasks) {
+            APP.cameFromMyTasks = false;
+            await loadMyTasksScreen();
+          } else if (APP.checklist && APP.checklist.length > 0) {
             await loadChecklistScreen(APP.currentPlant ? APP.currentPlant.plantID : null);
           } else {
             await loadEquipmentScreen();
@@ -1875,6 +1951,16 @@ function feRenderTable() {
     var badge = x.inspected
       ? '<span class="fe-badge-completed">Completed</span>'
       : '<span class="fe-badge-pending">Pending</span>';
+    var expiryBadge = '';
+    if (x.isExpired) {
+      expiryBadge = '<span style="color:#dc2626;font-weight:700;font-size:11px">&#9888; Expired</span>';
+    } else if (x.expiringSoon) {
+      expiryBadge = '<span style="color:#d97706;font-weight:700;font-size:11px">&#9888; ' + x.daysToExpiry + 'd left</span>';
+    } else if (x.expiryDate) {
+      expiryBadge = '<span style="color:#16a34a;font-size:11px">' + x.expiryDate + '</span>';
+    } else {
+      expiryBadge = '<span style="color:#9ca3af;font-size:11px">&mdash;</span>';
+    }
     return '<tr>' +
       '<td style="font-weight:600">' + escHtml(x.feId) + '</td>' +
       '<td>' + escHtml(x.building) + '</td>' +
@@ -1882,6 +1968,7 @@ function feRenderTable() {
       '<td>' + escHtml(x.location) + '</td>' +
       '<td>' + escHtml(x.type) + '</td>' +
       '<td>' + badge + '</td>' +
+      '<td>' + expiryBadge + '</td>' +
     '</tr>';
   }).join('');
 }
@@ -2103,9 +2190,11 @@ function feShowEditSheet(x) {
   sheet.className = 'fe-sheet open';
   sheet.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">' +
-      '<div class="fe-sheet-title">Edit FE</div>' +
+      '<div class="fe-sheet-title">Edit FE Details</div>' +
       '<button onclick="feCloseSheet()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-400)">&#10005;</button>' +
     '</div>' +
+    '<div class="form-group"><label class="form-label">FE ID</label>' +
+      '<input class="form-input" id="fe-edit-id" value="' + escHtml(x.feId) + '" placeholder="e.g. ABC-GF-001"></div>' +
     '<div class="form-group"><label class="form-label">Building</label>' +
       '<select class="form-input" id="fe-edit-building"><option value="P1">P1</option><option value="P2">P2</option></select></div>' +
     '<div class="form-group"><label class="form-label">Floor</label>' +
@@ -2115,7 +2204,9 @@ function feShowEditSheet(x) {
       '</select></div>' +
     '<div class="form-group"><label class="form-label">Location</label>' +
       '<input class="form-input" id="fe-edit-location" value="' + escHtml(x.location) + '"></div>' +
-    '<button class="btn btn-primary" style="width:100%" onclick="feSaveEditDetails(' + "'" + x.feId + "'" + ')">Save Changes</button>';
+    '<div class="form-group"><label class="form-label">Expiry Date</label>' +
+      '<input class="form-input" type="date" id="fe-edit-expiry" value="' + escHtml(x.expiryISO || '') + '"></div>' +
+    '<button class="btn btn-primary" style="width:100%;margin-top:4px" onclick="feSaveEditDetails(' + "'" + x.feId + "'" + ')">Save Changes</button>';
 
   document.getElementById('fe-edit-building').value = x.building;
   document.getElementById('fe-edit-floor').value    = x.floor;
@@ -2127,12 +2218,17 @@ function feCloseSheet() {
 }
 
 async function feSaveEditDetails(feId) {
+  var newFeId  = (document.getElementById('fe-edit-id')       ? document.getElementById('fe-edit-id').value.trim()   : feId) || feId;
   var building = document.getElementById('fe-edit-building').value;
   var floor    = document.getElementById('fe-edit-floor').value;
   var location = document.getElementById('fe-edit-location').value;
+
+  if (!newFeId) { showToast('FE ID cannot be empty', 'error'); return; }
+  var expiryDate = document.getElementById('fe-edit-expiry') ? document.getElementById('fe-edit-expiry').value : '';
+
   setLoading(true, 'Saving...');
   try {
-    await gasCall('updateFEDetails', feId, building, floor, location);
+    await gasCall('updateFEDetails', feId, building, floor, location, newFeId, expiryDate);
     setLoading(false);
     feCloseSheet();
     showToast('FE updated', 'success');
@@ -2953,7 +3049,68 @@ document.addEventListener('click', function(e) {
   if (!sheet.contains(e.target) && !e.target.closest('.fe-marker')) feCloseSheet();
 });
 
+function feRenderExpiryBadge(x) {
+  if (!x.expiryDate) return '';
+  var label = x.isExpired
+    ? '&#9888; Expired ' + Math.abs(x.daysToExpiry) + ' day' + (Math.abs(x.daysToExpiry) === 1 ? '' : 's') + ' ago'
+    : x.expiringSoon
+      ? '&#9888; Expires in ' + x.daysToExpiry + ' day' + (x.daysToExpiry === 1 ? '' : 's')
+      : '&#10003; Valid until ' + x.expiryDate; // already DD-MM-YYYY
+  var bg    = x.isExpired ? '#fef2f2' : x.expiringSoon ? '#fffbeb' : '#f0fdf4';
+  var color = x.isExpired ? '#dc2626' : x.expiringSoon ? '#d97706' : '#16a34a';
+  return '<div style="margin-top:8px;padding:6px 10px;border-radius:6px;font-size:12px;font-weight:600;background:' +
+    bg + ';color:' + color + '">' + label + '</div>';
+}
 
+function feToggleExpiryEdit() {
+  var displayEl = document.getElementById('fe-expiry-display');
+  var editEl    = document.getElementById('fe-expiry-edit');
+  var btnEl     = document.getElementById('fe-expiry-edit-btn');
+  if (!displayEl || !editEl) return;
+  var isEditing = editEl.style.display !== 'none';
+  displayEl.style.display = isEditing ? 'block' : 'none';
+  editEl.style.display    = isEditing ? 'none'  : 'block';
+  if (btnEl) btnEl.textContent = isEditing ? '\u270E Edit' : '\u2715 Cancel';
+}
+
+function feClearExpiryDate() {
+  var input = document.getElementById('fe-expiry-input');
+  if (input) input.value = '';
+}
+
+async function feSaveExpiryDate() {
+  var sheet  = document.getElementById('fe-sheet');
+  var x      = sheet._feData;
+  var input  = document.getElementById('fe-expiry-input');
+  if (!x || !input) return;
+
+  var newExpiry = input.value; // yyyy-MM-dd from date input, or '' if cleared
+
+  setLoading(true, 'Saving expiry date...');
+  try {
+    await gasCall('updateFEDetails', x.feId, x.building, x.floor, x.location, x.feId, newExpiry);
+    setLoading(false);
+
+    // Refresh FE data and re-open sheet with updated info
+    await feLoadData();
+
+    // Find updated FE object and re-render sheet
+    var updated = null;
+    for (var i = 0; i < FE.data.length; i++) {
+      if (FE.data[i].feId === x.feId) { updated = FE.data[i]; break; }
+    }
+
+    if (updated) {
+      feShowInspectSheetWithHistory(updated);
+      feRenderMap();
+    }
+
+    showToast('Expiry date saved', 'success');
+  } catch(e) {
+    setLoading(false);
+    showToast('Error: ' + escHtml(e.message), 'error');
+  }
+}
 // ═══════════════════════════════════════════════════════════
 // FE IMPROVEMENTS — Additional JS
 // ═══════════════════════════════════════════════════════════
@@ -2963,12 +3120,14 @@ async function feShowInspectSheetWithHistory(x) {
   var sheet = document.getElementById('fe-sheet');
   sheet.className = 'fe-sheet open';
 
-  // Days left indicator
   var now = new Date();
   var daysInMonth = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
   var daysLeft = daysInMonth - now.getDate();
   var urgencyCls = daysLeft <= 5 ? 'critical' : daysLeft <= 10 ? 'warn' : 'ok';
   var urgencyTxt = daysLeft <= 0 ? 'Last day!' : daysLeft + ' days left this month';
+
+  // Store current FE data on sheet element for expiry save
+  sheet._feData = x;
 
   sheet.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">' +
@@ -2976,6 +3135,36 @@ async function feShowInspectSheetWithHistory(x) {
       '<button onclick="feCloseSheet()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--gray-400)">&#10005;</button>' +
     '</div>' +
     '<div class="fe-sheet-sub">' + escHtml(x.location) + ' &bull; ' + escHtml(x.building) + ' ' + escHtml(x.floor) + ' &bull; ' + escHtml(x.type) + '</div>' +
+
+    // Expiry section — inline editor
+    '<div style="margin-top:10px;padding:10px;border-radius:8px;border:1px solid var(--gray-200);background:var(--gray-50)">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+        '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--gray-500)">Expiry Date</span>' +
+        '<button id="fe-expiry-edit-btn" onclick="feToggleExpiryEdit()" style="background:none;border:none;font-size:11px;color:var(--blue-primary);cursor:pointer;font-weight:600;padding:0">&#9998; Edit</button>' +
+      '</div>' +
+
+      // Display mode
+      '<div id="fe-expiry-display">' +
+        (x.expiryDate ? feRenderExpiryBadge(x) : '<span style="font-size:13px;color:var(--gray-400)">No expiry date set</span>') +
+      '</div>' +
+
+      // Edit mode (hidden by default)
+      '<div id="fe-expiry-edit" style="display:none;margin-top:8px">' +
+        '<div style="display:flex;gap:6px;align-items:center">' +
+          '<input type="date" id="fe-expiry-input" value="' + escHtml(x.expiryISO || '') + '" ' +
+            'style="flex:1;padding:7px 10px;border:1px solid var(--gray-300);border-radius:6px;font-size:13px">' +
+          '<button onclick="feClearExpiryDate()" ' +
+            'style="background:none;border:1px solid var(--gray-300);border-radius:6px;padding:7px 10px;font-size:12px;cursor:pointer;color:var(--gray-500);white-space:nowrap">Clear</button>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;margin-top:6px">' +
+          '<button onclick="feSaveExpiryDate()" ' +
+            'style="flex:1;background:var(--blue-primary);color:white;border:none;border-radius:6px;padding:8px;font-size:13px;font-weight:600;cursor:pointer">Save</button>' +
+          '<button onclick="feToggleExpiryEdit()" ' +
+            'style="flex:none;background:none;border:1px solid var(--gray-300);border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;color:var(--gray-500)">Cancel</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
     '<div class="fe-days-left ' + urgencyCls + '" style="margin-top:10px">' +
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>' +
       urgencyTxt + ' &bull; ' + (x.inspected ? '<strong>Inspected this month</strong>' : '<strong>Not yet inspected</strong>') +
@@ -3452,7 +3641,7 @@ var QRL = {
 async function qrlInit() {
   // Get base URL first
   try {
-    QRL.baseUrl = await gasCall('getWebAppUrl');
+    QRL.baseUrl = APP._webAppUrl || (APP._webAppUrl = await gasCall('getWebAppUrl'));
   } catch(e) {
     QRL.baseUrl = '';
   }
@@ -3630,43 +3819,659 @@ window.addEventListener('load', function() {
 
   setLoading(false);
 
-  // Check for existing session (survives page reload, clears on tab close)
-  var saved = null;
-  try { saved = JSON.parse(sessionStorage.getItem('fmp_session')); } catch(e) {}
+  // Check for existing session (localStorage, 8-hour TTL)
+  var saved = sessionLoad();
 
   if (saved && saved.techID && saved.name) {
-    // Restore session without PIN
+    // Valid session — skip login entirely
     APP.session = saved;
-    var nameEl = document.getElementById('nav-user-name');
+    sessionTouch(); // Refresh TTL on activity
+    var nameEl   = document.getElementById('nav-user-name');
     var avatarEl = document.getElementById('nav-avatar-text');
-    if (nameEl) nameEl.textContent = saved.name;
+    if (nameEl)   nameEl.textContent   = saved.name;
     if (avatarEl) avatarEl.textContent = saved.name.charAt(0).toUpperCase();
-    // Check if direct FE link (async — must await)
+
+    // Prefetch technicians in background
+    if (!APP.technicians || !APP.technicians.length) {
+      gasCall('getTechnicians').then(function(t) { if (t && Array.isArray(t)) APP.technicians = t; }).catch(function(){});
+    }
+
     var feId = (typeof OPEN_FE_ID !== 'undefined') ? OPEN_FE_ID : '';
     if (feId) { checkFEDirectLink(); return; }
     var openAreaID  = (typeof OPEN_AREA_ID  !== 'undefined') ? OPEN_AREA_ID  : '';
-    var openPlantID = (typeof OPEN_PLANT_ID !== 'undefined') ? OPEN_PLANT_ID : '';
+    var openEquipID = (typeof OPEN_EQUIP_ID !== 'undefined') ? OPEN_EQUIP_ID : '';
     if (openAreaID) {
-      loadPlantsScreen().then(function() {
-        return gasCall('getAreasWithStats', openPlantID || (APP.plants[0] && APP.plants[0].plantID));
-      }).then(function(areasData) {
-        var foundArea = null;
-        (areasData || []).forEach(function(a){ if (a.areaID === openAreaID) foundArea = a; });
-        if (foundArea) {
-          for (var pi = 0; pi < APP.plants.length; pi++) {
-            if (APP.plants[pi].plantID === foundArea.plantID) { APP.currentPlant = APP.plants[pi]; break; }
-          }
-          APP.currentArea = foundArea;
-          APP.areas = areasData;
-          return loadEquipmentScreen();
-        }
-      }).catch(function() { loadPlantsScreen(); });
+      handleQRDeepLink(openAreaID, openEquipID).then(function(ok) {
+        if (!ok) loadMyTasksScreen();
+      });
     } else {
-      loadPlantsScreen();
+      loadMyTasksScreen();
     }
   } else {
+    // No session — check if we have a remembered user to show quick PIN step
     showScreen('login');
-    initLogin();
+    var remembered = null;
+    try { remembered = JSON.parse(localStorage.getItem('fmp_last_user')); } catch(e) {}
+    if (remembered && remembered.techID && remembered.name) {
+      // Show quick PIN step for remembered user
+      loginState.selectedTech = remembered;
+      var qName   = document.getElementById('quick-name');
+      var qAvatar = document.getElementById('quick-avatar');
+      if (qName)   qName.textContent   = remembered.name;
+      if (qAvatar) qAvatar.textContent = remembered.name.charAt(0).toUpperCase();
+      showStep('step-quick');
+    } else {
+      initLogin();
+    }
   }
 });
+
+// Wire qrlInit into loadFESettings
+var _origLoadFESettings = loadFESettings;
+loadFESettings = async function() {
+  await _origLoadFESettings();
+  setTimeout(qrlInit, 500);
+};
+
+// ============================================================
+// EQUIPMENT QR LABEL GENERATOR (EQRL)
+// ============================================================
+var EQRL = { baseUrl: '', filtered: [], panelOpen: false };
+
+function eqrlTogglePanel() {
+  EQRL.panelOpen = !EQRL.panelOpen;
+  var panel = document.getElementById('eqrl-panel');
+  var chevron = document.getElementById('eqrl-chevron');
+  if (panel) panel.style.display = EQRL.panelOpen ? 'block' : 'none';
+  if (chevron) chevron.style.transform = EQRL.panelOpen ? 'rotate(180deg)' : '';
+  if (EQRL.panelOpen && !EQRL.baseUrl) eqrlInit();
+  else if (EQRL.panelOpen) eqrlPopulateList();
+}
+
+async function eqrlInit() {
+  try {
+    // Reuse cached URL if already fetched
+    EQRL.baseUrl = APP._webAppUrl || (APP._webAppUrl = await gasCall('getWebAppUrl'));
+  } catch(e) { EQRL.baseUrl = ''; }
+  eqrlPopulateList();
+}
+
+function eqrlPopulateList() {
+  var allEquip = APP.equipWithStatus || [];
+  var catFilter = document.getElementById('eqrl-category') ? document.getElementById('eqrl-category').value : '';
+  var catSel = document.getElementById('eqrl-category');
+  if (catSel) {
+    var cats = [];
+    allEquip.forEach(function(eq) { if (eq.category && cats.indexOf(eq.category) < 0) cats.push(eq.category); });
+    var currentVal = catSel.value;
+    catSel.innerHTML = '<option value="">All Categories<\/option>' +
+      cats.map(function(c) { return '<option value="' + escHtml(c) + '"' + (c === currentVal ? ' selected' : '') + '>' + escHtml(c) + '<\/option>'; }).join('');
+  }
+  EQRL.filtered = allEquip.filter(function(eq) {
+    if (catFilter && eq.category !== catFilter) return false;
+    return true;
+  });
+  var el = document.getElementById('eqrl-equip-list');
+  if (!el) return;
+  if (!EQRL.filtered.length) {
+    el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gray-400);font-size:13px">No equipment found<\/div>';
+    eqrlUpdateCount(); return;
+  }
+  el.innerHTML = EQRL.filtered.map(function(eq) {
+    var statusCls = eq.equipStatus === 'Completed Today' ? '#16a34a' : eq.equipStatus === 'Overdue' ? '#dc2626' : '#d97706';
+    return '<div class="qrl-fe-item" onclick="eqrlToggleItem(this)">' +
+      '<input type="checkbox" class="eqrl-cb" data-equipid="' + escHtml(eq.equipID) + '" onclick="event.stopPropagation();eqrlUpdateCount()">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div class="qrl-fe-name">' + escHtml(eq.equipmentName) + '<\/div>' +
+        '<div class="qrl-fe-sub">' + escHtml(eq.assetTag || eq.equipID) + (eq.category ? ' &bull; ' + escHtml(eq.category) : '') + '<\/div>' +
+      '<\/div>' +
+      '<span style="font-size:10px;font-weight:700;color:' + statusCls + ';white-space:nowrap">' + escHtml(eq.equipStatus) + '<\/span>' +
+    '<\/div>';
+  }).join('');
+  eqrlUpdateCount();
+}
+
+function eqrlFilterEquip() { eqrlPopulateList(); }
+
+function eqrlToggleItem(row) {
+  var cb = row.querySelector('.eqrl-cb');
+  if (cb) { cb.checked = !cb.checked; eqrlUpdateCount(); }
+}
+
+function eqrlSelectAll(checked) {
+  document.querySelectorAll('.eqrl-cb').forEach(function(cb) { cb.checked = checked; });
+  eqrlUpdateCount();
+}
+
+function eqrlUpdateCount() {
+  var checked = document.querySelectorAll('.eqrl-cb:checked').length;
+  var total   = document.querySelectorAll('.eqrl-cb').length;
+  var el = document.getElementById('eqrl-count');
+  if (el) el.textContent = checked + ' of ' + total + ' selected';
+  var allCb = document.getElementById('eqrl-select-all');
+  if (allCb) allCb.checked = (total > 0 && checked === total);
+}
+
+function eqrlGetSelected() {
+  var result = [];
+  document.querySelectorAll('.eqrl-cb:checked').forEach(function(cb) {
+    var equipID = cb.getAttribute('data-equipid');
+    var eq = (APP.equipWithStatus || []).find(function(e) { return e.equipID === equipID; });
+    if (eq) result.push(eq);
+  });
+  return result;
+}
+
+function equipGenerateQRLabels() {
+  var selected = eqrlGetSelected();
+  if (!selected.length) { showToast('Please select at least one equipment', 'error'); return; }
+  var size    = document.getElementById('eqrl-size') ? document.getElementById('eqrl-size').value : 'md';
+  var cols    = document.getElementById('eqrl-cols') ? document.getElementById('eqrl-cols').value : '3';
+  var baseUrl = EQRL.baseUrl || '';
+  var qrPx    = size === 'sm' ? 80 : size === 'lg' ? 140 : 110;
+  var areaName  = (APP.currentArea  && APP.currentArea.areaName)   || '';
+  var plantName = (APP.currentPlant && APP.currentPlant.plantName) || '';
+  var labelsHtml = selected.map(function(eq) {
+    var inspectUrl = baseUrl +
+      '?openArea=' + encodeURIComponent(eq.areaID) +
+      '&equipID='  + encodeURIComponent(eq.equipID) +
+      '&plantID='  + encodeURIComponent((APP.currentPlant && APP.currentPlant.plantID) || '');
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?data=' +
+      encodeURIComponent(inspectUrl) + '&size=' + qrPx + 'x' + qrPx + '&margin=2&color=1a1a1a&bgcolor=ffffff';
+    var cycleCls = eq.inspectionCycle === 'Daily' ? 'cycle-daily' : eq.inspectionCycle === 'Weekly' ? 'cycle-weekly' : 'cycle-other';
+    return '<div class="qr-label qr-label-size-' + size + '">' +
+      '<div class="qr-label-qr"><img src="' + qrUrl + '" alt="QR" width="' + qrPx + '" height="' + qrPx + '" onerror="this.style.opacity=0.3"><\/div>' +
+      '<div class="qr-label-id">' + escHtml(eq.equipmentName) + '<\/div>' +
+      '<div class="qr-label-location">' + escHtml(eq.assetTag || eq.equipID) + '<br>' + escHtml(areaName) + (plantName ? ' &rsaquo; ' + escHtml(plantName) : '') + '<\/div>' +
+      '<div class="qr-label-type ' + cycleCls + '">' + escHtml(eq.inspectionCycle) + '<\/div>' +
+      '<div class="qr-label-scan">Scan to Inspect<\/div>' +
+    '<\/div>';
+  }).join('');
+  var now = new Date().toLocaleDateString('en-MY', { day: '2-digit', month: 'long', year: 'numeric' });
+  var printHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Equipment Inspection Labels<\/title>' +
+    '<style>' +
+    '*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }' +
+    'body { font-family: Segoe UI, Arial, sans-serif; background: #f3f4f6; }' +
+    '.no-print-label { background: #1a56db; color: white; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }' +
+    '.no-print-label h2 { font-size: 15px; font-weight: 700; }' +
+    '.no-print-label button { background: white; color: #1a56db; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; }' +
+    '.no-print-label .info { font-size: 12px; opacity: .8; margin-top: 2px; }' +
+    '.label-sheet { background: white; margin: 16px auto; max-width: 210mm; padding: 8mm; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); }' +
+    '.label-grid { display: grid; gap: 4mm; grid-template-columns: repeat(' + cols + ', 1fr); }' +
+    '.qr-label { border: 1.5px solid #d1d5db; border-radius: 6px; padding: 4mm 3mm 3mm; display: flex; flex-direction: column; align-items: center; background: white; page-break-inside: avoid; position: relative; overflow: hidden; }' +
+    '.qr-label::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: #1a56db; }' +
+    '.qr-label-qr { border: 1px solid #e5e7eb; border-radius: 4px; padding: 2px; background: white; margin-bottom: 2.5mm; }' +
+    '.qr-label-qr img { display: block; }' +
+    '.qr-label-id { font-size: ' + (size === 'lg' ? '12' : '10') + 'px; font-weight: 800; color: #1f2937; text-align: center; letter-spacing: .3px; margin-bottom: 1mm; word-break: break-all; }' +
+    '.qr-label-location { font-size: ' + (size === 'lg' ? '10' : '8') + 'px; color: #6b7280; text-align: center; line-height: 1.3; margin-bottom: 1mm; }' +
+    '.qr-label-type { font-size: 8px; font-weight: 700; padding: 1px 7px; border-radius: 20px; margin-bottom: 1.5mm; }' +
+    '.cycle-daily  { background: #dcfce7; color: #15803d; }' +
+    '.cycle-weekly { background: #dbeafe; color: #1d4ed8; }' +
+    '.cycle-other  { background: #f3f4f6; color: #6b7280; }' +
+    '.qr-label-scan { font-size: 7px; color: #9ca3af; text-align: center; text-transform: uppercase; font-weight: 600; letter-spacing: .5px; }' +
+    '@media print { .no-print-label { display: none !important; } body { background: white; } .label-sheet { margin: 0; padding: 6mm; max-width: none; box-shadow: none; border-radius: 0; } @page { margin: 6mm; size: A4 portrait; } }' +
+    '<\/style><\/head><body>' +
+    '<div class="no-print-label"><div><h2>&#128247; Equipment Inspection Labels &mdash; ' + selected.length + ' label' + (selected.length !== 1 ? 's' : '') + '<\/h2>' +
+    '<div class="info">Generated ' + now + (areaName ? ' &bull; ' + areaName : '') + ' &bull; ' + cols + ' per row<\/div><\/div>' +
+    '<button onclick="window.print()">&#128438; Print Labels<\/button><\/div>' +
+    '<div class="label-sheet"><div class="label-grid">' + labelsHtml + '<\/div><\/div><\/body><\/html>';
+  var win = window.open('', '_blank', 'width=900,height=700');
+  if (win) { win.document.write(printHtml); win.document.close(); }
+  else { showToast('Popup blocked. Please allow popups for this site.', 'error'); }
+}
+
+function eqrlOnEquipLoaded() {
+  if (EQRL.panelOpen) eqrlPopulateList();
+}
+
+
+// ============================================================
+// PHOTO ATTACHMENT HANDLING
+// ============================================================
+APP.pendingPhotos = []; // [{name, base64, mimeType, previewUrl}]
+APP.myTasks = [];
+APP.myTasksCounts = { overdue: 0, pending: 0, total: 0 };
+APP.myTasksSearch = '';
+APP.myTasksGroupPage = 1;
+APP.myTasksGroupPageSize = 5;
+APP.myTasksExpanded = {};
+APP.myTasksCycle = 'All';
+APP.cameFromMyTasks = false;
+
+function handlePhotoSelect(files) {
+  if (!files || !files.length) return;
+  Array.from(files).forEach(function(file) { addPhoto(file); });
+  document.getElementById('attach-file').value = '';
+}
+
+function handlePhotoDrop(e) {
+  e.preventDefault();
+  var files = e.dataTransfer.files;
+  if (files && files.length) Array.from(files).forEach(function(file) { addPhoto(file); });
+}
+
+function addPhoto(file) {
+  if (!file.type.match(/image\/(jpeg|png|jpg)/)) {
+    showToast('Only JPG/PNG images supported', 'warning'); return;
+  }
+  if (file.size > 5 * 1024 * 1024) {
+    showToast(file.name + ' is too large (max 5MB)', 'warning'); return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dataUrl = e.target.result;
+    // dataUrl = "data:image/jpeg;base64,XXXX"
+    var parts  = dataUrl.split(',');
+    var base64 = parts[1];
+    var mime   = file.type;
+    APP.pendingPhotos.push({ name: file.name, base64: base64, mimeType: mime, previewUrl: dataUrl });
+    renderPhotoPreview();
+  };
+  reader.readAsDataURL(file);
+}
+
+function removePhoto(idx) {
+  APP.pendingPhotos.splice(idx, 1);
+  renderPhotoPreview();
+}
+
+function renderPhotoPreview() {
+  var el = document.getElementById('photo-preview-list');
+  if (!el) return;
+  if (!APP.pendingPhotos.length) { el.innerHTML = ''; return; }
+  el.innerHTML = APP.pendingPhotos.map(function(p, i) {
+    return '<div style="position:relative;width:72px">' +
+      '<img src="' + p.previewUrl + '" style="width:72px;height:72px;object-fit:cover;border-radius:6px;border:1px solid var(--gray-200)">' +
+      '<button onclick="removePhoto(' + i + ')" style="position:absolute;top:-6px;right:-6px;width:18px;height:18px;border-radius:50%;background:#ef4444;color:white;border:none;cursor:pointer;font-size:11px;line-height:18px;text-align:center;padding:0">&times;<\/button>' +
+      '<div style="font-size:9px;color:var(--gray-500);text-align:center;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(p.name) + '<\/div>' +
+    '<\/div>';
+  }).join('');
+}
+
+function clearPhotoPreview() {
+  APP.pendingPhotos = [];
+  renderPhotoPreview();
+}
+
+
+// ============================================================
+// FAST QR DEEP LINK — single batch call replaces 4 round trips
+// ============================================================
+async function handleQRDeepLink(openAreaID, openEquipID) {
+  setLoading(true, 'Loading...');
+  try {
+    var dl = await gasCall('getQRDeepLink', openAreaID, openEquipID || '', APP.selectedDate);
+    if (!dl || dl.error) throw new Error((dl && dl.error) || 'Deep link failed');
+
+    APP.plants = dl.plants || [];
+    if (dl.technicians && dl.technicians.length) APP.technicians = dl.technicians;
+
+    var foundArea = null;
+    (dl.areas || []).forEach(function(a){ if (a.areaID === openAreaID) foundArea = a; });
+    if (!foundArea) throw new Error('Area not found');
+
+    for (var pi = 0; pi < APP.plants.length; pi++) {
+      if (APP.plants[pi].plantID === foundArea.plantID) { APP.currentPlant = APP.plants[pi]; break; }
+    }
+    APP.currentArea     = foundArea;
+    APP.areas           = dl.areas;
+    APP.equipWithStatus = dl.equipWithStatus || [];
+    APP.cache.areasTs[openAreaID + '_' + APP.selectedDate] = Date.now();
+
+    showScreen('equipment');
+    renderEquipmentScreen();
+    setLoading(false);
+
+    if (openEquipID) {
+      var foundEquip = null;
+      for (var ei = 0; ei < APP.equipWithStatus.length; ei++) {
+        if (APP.equipWithStatus[ei].equipID === openEquipID) { foundEquip = APP.equipWithStatus[ei]; break; }
+      }
+      if (foundEquip) openInspectionFormPreloaded(foundEquip, dl.templates);
+    }
+    return true;
+  } catch(e) {
+    setLoading(false);
+    console.log('Deep link error:', e);
+    return false;
+  }
+}
+
+// Open inspection form using already-loaded templates — zero round trips
+function openInspectionFormPreloaded(equip, templates) {
+  APP.currentEquip      = equip;
+  APP.currentInspection = { details: {} };
+  APP.templates         = templates || [];
+  clearPhotoPreview();
+  showScreen('form');
+  renderInspectionForm();
+}
+
+
+// ============================================================
+// SESSION MANAGEMENT — localStorage with 8-hour TTL
+// ============================================================
+var SESSION_TTL = 8 * 60 * 60 * 1000; // 8 hours
+var SESSION_KEY = 'fmp_session_v2';
+
+function sessionSave(data) {
+  try {
+    var payload = JSON.stringify({ data: data, ts: Date.now() });
+    localStorage.setItem(SESSION_KEY, payload);
+  } catch(e) {}
+}
+
+function sessionLoad() {
+  try {
+    var raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    var obj = JSON.parse(raw);
+    if (!obj || !obj.data || !obj.ts) return null;
+    if (Date.now() - obj.ts > SESSION_TTL) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
+    return obj.data;
+  } catch(e) { return null; }
+}
+
+function sessionClear() {
+  try { localStorage.removeItem(SESSION_KEY); } catch(e) {}
+}
+
+function sessionTouch() {
+  // Refresh the timestamp so active users don't get logged out
+  try {
+    var raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    var obj = JSON.parse(raw);
+    if (obj) { obj.ts = Date.now(); localStorage.setItem(SESSION_KEY, JSON.stringify(obj)); }
+  } catch(e) {}
+}
+
+function switchUser() {
+  // Keep remembered user info but force PIN re-entry with name selection
+  loginState = { selectedTech: null, pin: '' };
+  initLogin();
+}
+
+
+// ============================================================
+// MY TASKS TODAY
+// ============================================================
+async function loadMyTasksScreen(plantID) {
+  sessionTouch();
+  showScreen('mytasks');
+  setLoading(true, 'Loading your tasks...');
+  try {
+    var data = await gasCall('getMyTasksToday', plantID || '');
+    if (!data || data.error) throw new Error((data && data.error) || 'Failed to load tasks');
+    APP.myTasks = data.tasks || [];
+    APP.myTasksCounts = data.counts || { overdue: 0, pending: 0, total: 0 };
+    APP.myTasksSearch = '';
+    APP.myTasksGroupPage = 1;
+    APP.myTasksExpanded = {};
+    APP.myTasksCycle = 'All';
+
+    var searchEl = document.getElementById('mt-search');
+    if (searchEl) searchEl.value = '';
+
+    var filterSel = document.getElementById('mt-plant-filter');
+    if (filterSel && filterSel.options.length <= 1 && data.plants) {
+      filterSel.innerHTML = '<option value="">All Plants</option>' +
+        data.plants.map(function(p){ return '<option value="' + p.plantID + '">' + escHtml(p.plantName) + '</option>'; }).join('');
+    }
+    if (filterSel) filterSel.value = plantID || '';
+
+    renderMyTasksScreen();
+
+    var badgeEl = document.getElementById('sidebar-mytasks-badge');
+    if (badgeEl) {
+      if (data.counts.total > 0) { badgeEl.style.display = 'inline-block'; badgeEl.textContent = data.counts.total; }
+      else badgeEl.style.display = 'none';
+    }
+
+    setLoading(false);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load tasks: ' + e.message, 'error');
+  }
+}
+
+function mtFilterTasks(value) {
+  APP.myTasksSearch = (value || '').trim().toLowerCase();
+  APP.myTasksGroupPage = 1;
+  renderMyTasksScreen();
+}
+
+// Buckets the many inspectionCycle values into 4 simple groups for tabs
+function mtCycleBucket(cycle) {
+  if (cycle === 'Daily') return 'Daily';
+  if (cycle === 'Weekly' || cycle === 'Bi-Weekly' || cycle === 'Semi-Monthly') return 'Weekly';
+  if (cycle === 'Monthly') return 'Monthly';
+  return 'Other'; // Quarterly, Semi-Annual, Annual, anything else
+}
+
+function mtGetFilteredTasks() {
+  var tasks = APP.myTasks;
+
+  if (APP.myTasksCycle && APP.myTasksCycle !== 'All') {
+    tasks = tasks.filter(function(t) { return mtCycleBucket(t.inspectionCycle) === APP.myTasksCycle; });
+  }
+
+  var term = APP.myTasksSearch;
+  if (term) {
+    tasks = tasks.filter(function(t) {
+      return (t.equipmentName && t.equipmentName.toLowerCase().indexOf(term) >= 0) ||
+             (t.assetTag && t.assetTag.toLowerCase().indexOf(term) >= 0);
+    });
+  }
+
+  return tasks;
+}
+
+function mtRenderCycleTabs() {
+  var el = document.getElementById('mt-cycle-tabs');
+  if (!el) return;
+
+  var buckets = { Daily: 0, Weekly: 0, Monthly: 0, Other: 0 };
+  APP.myTasks.forEach(function(t) { buckets[mtCycleBucket(t.inspectionCycle)]++; });
+
+  var order = ['All', 'Daily', 'Weekly', 'Monthly', 'Other'];
+  var html = order.map(function(key) {
+    var count = key === 'All' ? APP.myTasks.length : buckets[key];
+    if (key !== 'All' && count === 0) return ''; // hide empty cycle tabs
+    var activeCls = (APP.myTasksCycle === key) ? ' active' : '';
+    return '<button class="cl-tab' + activeCls + '" onclick="mtSelectCycle(\'' + key + '\')">' +
+      escHtml(key) + ' (' + count + ')' +
+    '</button>';
+  }).join('');
+
+  el.innerHTML = html;
+}
+
+function mtSelectCycle(bucket) {
+  APP.myTasksCycle = bucket;
+  APP.myTasksGroupPage = 1;
+  renderMyTasksScreen();
+}
+
+function mtGroupTasks(tasks) {
+  var groups = {};
+  tasks.forEach(function(t) {
+    if (!groups[t.areaID]) {
+      groups[t.areaID] = { areaID: t.areaID, areaName: t.areaName, plantName: t.plantName, overdue: 0, pending: 0, tasks: [] };
+    }
+    var g = groups[t.areaID];
+    if (t.equipStatus === 'Overdue') g.overdue++; else g.pending++;
+    g.tasks.push(t);
+  });
+  var list = Object.values(groups);
+  list.sort(function(a, b) {
+    if (b.overdue !== a.overdue) return b.overdue - a.overdue;
+    if (b.pending !== a.pending) return b.pending - a.pending;
+    return a.areaName.localeCompare(b.areaName);
+  });
+  return list;
+}
+
+function renderMyTasksScreen() {
+  var counts = APP.myTasksCounts || { overdue: 0, pending: 0, total: 0 };
+  document.getElementById('mt-overdue-count').textContent = counts.overdue;
+  document.getElementById('mt-pending-count').textContent = counts.pending;
+  document.getElementById('mt-total-count').textContent   = counts.total;
+
+  mtRenderCycleTabs();
+
+  var container = document.getElementById('mytasks-list');
+  var pagWrap = document.getElementById('mytasks-pagination');
+  if (!container) return;
+
+  if (!APP.myTasks.length) {
+    var tabsEl = document.getElementById('mt-cycle-tabs');
+    if (tabsEl) tabsEl.innerHTML = '';
+    if (pagWrap) pagWrap.style.display = 'none';
+    container.innerHTML = '<div class="empty-state">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--gray-300);margin:0 auto 12px;display:block"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>' +
+      '<h3>All caught up!</h3><p>No pending or overdue inspections right now.</p>' +
+    '</div>';
+    return;
+  }
+
+  var filtered = mtGetFilteredTasks();
+  var searchActive = !!APP.myTasksSearch;
+
+  if (!filtered.length) {
+    if (pagWrap) pagWrap.style.display = 'none';
+    var emptyMsg = searchActive
+      ? 'No equipment matches your search.'
+      : 'Nothing pending in this category right now.';
+    container.innerHTML = '<div class="empty-state">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--gray-300);margin:0 auto 12px;display:block"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>' +
+      '<h3>No matches</h3><p>' + emptyMsg + '</p>' +
+    '</div>';
+    return;
+  }
+
+  var groups = mtGroupTasks(filtered);
+  var pageSize = APP.myTasksGroupPageSize || 5;
+  var totalPages = Math.max(1, Math.ceil(groups.length / pageSize));
+  if (APP.myTasksGroupPage > totalPages) APP.myTasksGroupPage = totalPages;
+  var page = APP.myTasksGroupPage;
+  var start = (page - 1) * pageSize;
+  var pageGroups = groups.slice(start, start + pageSize);
+
+  // Auto-expand the first group on page 1 the first time (before any user toggle)
+  if (page === 1 && Object.keys(APP.myTasksExpanded).length === 0 && pageGroups.length) {
+    APP.myTasksExpanded[pageGroups[0].areaID] = true;
+  }
+
+  container.innerHTML = pageGroups.map(function(g) {
+    var isOpen = searchActive || !!APP.myTasksExpanded[g.areaID];
+    var pills = '';
+    if (g.overdue > 0) pills += '<span class="badge badge-red">' + g.overdue + ' overdue</span>';
+    if (g.pending > 0) pills += '<span class="badge badge-orange">' + g.pending + ' pending</span>';
+
+    var rows = g.tasks.map(function(t) { return renderTaskRow(t); }).join('');
+
+    return '<div class="mt-group' + (isOpen ? ' open' : '') + '" data-area="' + escHtml(g.areaID) + '">' +
+      '<div class="mt-group-header" onclick="mtToggleGroup(\'' + g.areaID + '\')">' +
+        '<svg class="mt-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>' +
+        '<div class="mt-group-title">' + escHtml(g.areaName) + ' <span>\u2014 ' + escHtml(g.plantName) + '</span></div>' +
+        pills +
+      '</div>' +
+      '<div class="mt-group-body">' + rows + '</div>' +
+    '</div>';
+  }).join('');
+
+  // Pagination
+  if (pagWrap) {
+    if (groups.length > pageSize) {
+      pagWrap.style.display = 'flex';
+      var infoEl = document.getElementById('mt-page-info');
+      var gStart = start + 1, gEnd = Math.min(start + pageSize, groups.length);
+      if (infoEl) infoEl.textContent = 'Showing areas ' + gStart + '-' + gEnd + ' of ' + groups.length;
+
+      var btns = '<button class="pg-btn" onclick="mtChangeGroupPage(' + (page - 1) + ')" ' + (page === 1 ? 'disabled' : '') + '>\u2039 Previous</button>';
+      for (var i = 1; i <= totalPages; i++) {
+        btns += '<button class="pg-btn pg-num ' + (i === page ? 'active' : '') + '" onclick="mtChangeGroupPage(' + i + ')">' + i + '</button>';
+      }
+      btns += '<button class="pg-btn" onclick="mtChangeGroupPage(' + (page + 1) + ')" ' + (page === totalPages ? 'disabled' : '') + '>Next \u203A</button>';
+      var btnsEl = document.getElementById('mt-page-btns');
+      if (btnsEl) btnsEl.innerHTML = btns;
+    } else {
+      pagWrap.style.display = 'none';
+    }
+  }
+}
+
+function mtToggleGroup(areaID) {
+  APP.myTasksExpanded[areaID] = !APP.myTasksExpanded[areaID];
+  var el = document.querySelector('.mt-group[data-area="' + areaID + '"]');
+  if (el) el.classList.toggle('open', !!APP.myTasksExpanded[areaID]);
+}
+
+function mtChangeGroupPage(page) {
+  APP.myTasksGroupPage = page;
+  renderMyTasksScreen();
+}
+
+function renderTaskRow(t) {
+  var isOverdue = t.equipStatus === 'Overdue';
+  var iconCls = isOverdue ? 'overdue' : 'pending';
+  var iconSvg = isOverdue
+    ? '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+
+  var metaParts = [escHtml(t.assetTag || '\u2013'), escHtml(t.inspectionCycle)];
+  if (t.lastInspection) {
+    metaParts.push('Last: ' + escHtml(formatDate(t.lastInspection)));
+  } else {
+    metaParts.push('Never inspected');
+  }
+  var metaCls = 'mt-task-meta';
+  if (isOverdue && t.daysOverdue) {
+    metaParts.push(t.daysOverdue + ' day' + (t.daysOverdue === 1 ? '' : 's') + ' overdue');
+    metaCls += ' overdue-text';
+  } else if (isOverdue && !t.lastInspection) {
+    metaCls += ' overdue-text';
+  }
+
+  return '<div class="mt-task-row">' +
+    '<div class="mt-task-icon ' + iconCls + '">' + iconSvg + '</div>' +
+    '<div class="mt-task-info">' +
+      '<div class="mt-task-name">' + escHtml(t.equipmentName) + '</div>' +
+      '<div class="' + metaCls + '">' + metaParts.join(' \u00B7 ') + '</div>' +
+    '</div>' +
+    '<button class="mt-inspect-btn" onclick="openTaskInspection(\'' + t.equipID + '\')">Inspect</button>' +
+  '</div>';
+}
+
+async function openTaskInspection(equipID) {
+  var task = null;
+  for (var i = 0; i < APP.myTasks.length; i++) {
+    if (APP.myTasks[i].equipID === equipID) { task = APP.myTasks[i]; break; }
+  }
+  if (!task) { showToast('Task not found', 'error'); return; }
+
+  setLoading(true, 'Loading inspection form...');
+  try {
+    APP.currentPlant = { plantID: task.plantID, plantName: task.plantName };
+    APP.currentArea  = { areaID:  task.areaID,  areaName:  task.areaName, plantID: task.plantID };
+    APP.cameFromMyTasks = true;
+
+    var equip = {
+      equipID: task.equipID, areaID: task.areaID, equipmentName: task.equipmentName,
+      assetTag: task.assetTag, inspectionCycle: task.inspectionCycle, category: task.category,
+      equipStatus: task.equipStatus, lastInspection: task.lastInspection
+    };
+    var templates = await gasCall('getTemplates', task.equipID);
+    setLoading(false);
+    openInspectionFormPreloaded(equip, templates);
+  } catch(e) {
+    setLoading(false);
+    showToast('Failed to load form: ' + e.message, 'error');
+  }
+}
+
 </script>
